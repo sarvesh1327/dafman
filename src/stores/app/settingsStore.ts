@@ -6,20 +6,22 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invokeCommand } from '@/ipc/invoke';
-import type {
-  NotificationPrefs,
-  ReasoningVisibility,
-  Settings,
-  TerminalPrefs,
-  ThemeChoice,
+import {
+  LAYOUT_SCHEMA_VERSION,
+  type ComposerSubmitKeybinding,
+  type Layout,
+  type NotificationPrefs,
+  type ReasoningVisibility,
+  type Settings,
+  type TerminalPrefs,
+  type ThemeChoice,
 } from '@/ipc/types';
-import { LAYOUT_SCHEMA_VERSION, type Layout } from '@/ipc/types';
 import { useToastStore } from '@/stores/app/toastStore';
 import { toErrorMessage } from '@/lib/errorMessage';
 
 function defaultSettings(): Settings {
   return {
-    version: 14,
+    version: 15,
     appearance: {
       theme: 'system',
       reasoningVisibility: 'compact',
@@ -53,6 +55,7 @@ function defaultSettings(): Settings {
         serialize: true,
       },
     },
+    composer: { submitKeybinding: 'enter' },
   };
 }
 
@@ -288,6 +291,22 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  /// #88: persists which keystroke submits the composer. Takes effect
+  /// live — `MessageComposer` reads the setting reactively and re-keys
+  /// the `SubmitOnEnter` plugin's keybinding getter.
+  async function setComposerSubmitKeybinding(
+    submitKeybinding: ComposerSubmitKeybinding,
+  ): Promise<void> {
+    try {
+      await update({
+        ...settings.value,
+        composer: { ...settings.value.composer, submitKeybinding },
+      });
+    } catch {
+      /* toast already shown by `update()` */
+    }
+  }
+
   return {
     settings,
     loaded,
@@ -306,5 +325,6 @@ export const useSettingsStore = defineStore('settings', () => {
     setDefaultApproveAll,
     setDefaultTerminalProfile,
     setTerminalPrefs,
+    setComposerSubmitKeybinding,
   };
 });

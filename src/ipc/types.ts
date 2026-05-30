@@ -8,6 +8,10 @@ export type ThemeChoice = 'system' | 'light' | 'dark';
 
 export type ReasoningVisibility = 'hidden' | 'compact' | 'expanded';
 
+/// Mirrors `ComposerSubmitKeybinding` in `src-bun/rpc.ts`. Which
+/// keystroke submits the composer.
+export type ComposerSubmitKeybinding = 'enter' | 'mod-enter';
+
 /// Mirrors `SessionMode` in `src-bun/rpc.ts`. Agent run mode.
 export type SessionMode = 'interactive' | 'plan' | 'autopilot';
 
@@ -46,6 +50,12 @@ export interface Settings {
   tools: ToolsPrefs;
   permissions: PermissionsPrefs;
   terminal: TerminalPrefs;
+  composer: ComposerPrefs;
+}
+
+/// Mirrors `ComposerPrefs` in `src-bun/rpc.ts`. Composer keybindings.
+export interface ComposerPrefs {
+  submitKeybinding: ComposerSubmitKeybinding;
 }
 
 export interface ToolsPrefs {

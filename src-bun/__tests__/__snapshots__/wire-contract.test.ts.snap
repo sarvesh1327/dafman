@@ -10,6 +10,9 @@ exports[`IPC wire contracts Settings shape 1`] = `
     "streaming": false,
     "theme": "dark",
   },
+  "composer": {
+    "submitKeybinding": "enter",
+  },
   "layout": {
     "dockview": null,
   },
@@ -67,6 +70,9 @@ exports[`IPC wire contracts Settings with persisted layout 1`] = `
     "reasoningVisibility": "compact",
     "streaming": true,
     "theme": "dark",
+  },
+  "composer": {
+    "submitKeybinding": "mod-enter",
   },
   "layout": {
     "dockview": {
@@ -138,6 +144,9 @@ exports[`IPC wire contracts Settings with v3 groups layout 1`] = `
     "reasoningVisibility": "compact",
     "streaming": true,
     "theme": "dark",
+  },
+  "composer": {
+    "submitKeybinding": "enter",
   },
   "layout": {
     "groups": [
@@ -238,6 +247,17 @@ exports[`IPC wire contracts Settings with v3 groups layout 1`] = `
   "workspaces": {
     "defaultWorkspace": "",
     "recent": [],
+  },
+}
+`;
+
+exports[`IPC wire contracts ComposerPrefs shape 1`] = `
+{
+  "enterMode": {
+    "submitKeybinding": "enter",
+  },
+  "modEnterMode": {
+    "submitKeybinding": "mod-enter",
   },
 }
 `;

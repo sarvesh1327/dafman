@@ -15,6 +15,11 @@ import type { AppErrorPayload } from './app/shared/errors';
 export type ThemeChoice = 'system' | 'light' | 'dark';
 export type ReasoningVisibility = 'hidden' | 'compact' | 'expanded';
 
+/// Which keystroke submits the composer.
+///   "enter"     -> plain Enter sends; Ctrl/Cmd+Enter inserts a newline.
+///   "mod-enter" -> Ctrl/Cmd+Enter sends; plain Enter inserts a newline.
+export type ComposerSubmitKeybinding = 'enter' | 'mod-enter';
+
 /// Agent run mode, mirrors the SDK `SessionMode` union.
 /// "interactive" prompts for permission per action; "plan" stays in
 /// read-only planning mode; "autopilot" runs unattended.
@@ -85,6 +90,18 @@ export interface Settings {
   /// what's been remembered; this is the only knob we can surface.
   permissions: PermissionsPrefs;
   terminal: TerminalPrefs;
+  /// Composer keybindings (issue #88). Currently just the submit
+  /// chord; the section exists so we can expand the composer-keybinding
+  /// surface later (per-OS defaults, more chords) without another
+  /// migration shape change.
+  composer: ComposerPrefs;
+}
+
+export interface ComposerPrefs {
+  /// Which keystroke sends the message. `'enter'` (default): plain
+  /// Enter sends, Ctrl/Cmd+Enter inserts a newline. `'mod-enter'`:
+  /// Ctrl/Cmd+Enter sends, plain Enter inserts a newline.
+  submitKeybinding: ComposerSubmitKeybinding;
 }
 
 export interface PermissionsPrefs {

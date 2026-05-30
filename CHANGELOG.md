@@ -3,6 +3,9 @@ All notable changes to Dafman are documented here. Format is based on [Keep a Ch
 
 ## [Unreleased]
 
+### Added (#88 — 2026-05-31)
+- **Composer submit keybinding is now a user setting.** Settings → Composer lets you choose between **Enter sends, Ctrl+Enter newline** (the new default) and **Ctrl+Enter sends, Enter newline** (the previous behavior). The choice persists (`composer.submitKeybinding`, settings v15; existing users migrate to `'enter'`). In Enter-sends mode, plain Enter still **selects** the highlighted item when the slash (`/`) or mention (`@`) typeahead menu is open and has a selectable result, so `/model⏎` and `@file⏎` keep working; an unmatched `/foo⏎` or settled `@nomatch⏎` sends the raw text. Ctrl+Enter inserts a newline even while a menu is open, and Shift+Enter (soft break), Ctrl+Shift+Enter (interrupt), and Alt+Enter (queue) are unchanged in both modes.
+
 ### Fixed (#83 — 2026-05-30)
 - **Messages with two or more mermaid diagrams now render each in its own block.** Previously the first block painted all the diagrams overlapping each other and the later blocks came out empty. `MermaidBlock.vue` built its mermaid render id as `` `mermaid-${Date.now()}-${++counter}` ``, but `counter` was declared inside `<script setup>` — i.e. per component instance — so it was always `1`, and `Date.now()` ties for diagrams mounted in the same tick. Two diagrams therefore shared an identical id and mermaid rendered both into the same element. Fix: use Vue 3.5 `useId()` (app-scoped unique) for the render id. Regression test in `src/components/shared/__tests__/MermaidBlock.test.ts` mounts two blocks in one app with a frozen clock and asserts mermaid receives distinct ids (fails on the pre-fix component, passes after).
 

@@ -53,6 +53,12 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'select', attachment: SendMessageAttachment): void;
   (e: 'dismiss'): void;
+  /// Fired whenever the result set or in-flight state changes. The
+  /// `@`-mention surface uses this to decide whether plain Enter should
+  /// select a result or fall through to send (issue #88): a menu with
+  /// pending or non-empty results is "active" and defers Enter; a
+  /// settled empty result set lets Enter send the raw `@query` text.
+  (e: 'results-state', payload: { count: number; loading: boolean }): void;
 }>();
 
 const LS_HIDDEN = 'dafman.filePicker.showHidden';
@@ -96,6 +102,8 @@ let fetchTag = 0;
 async function fetchResults(): Promise<void> {
   const tag = ++fetchTag;
 
+  emit('results-state', { count: results.value.length, loading: true });
+
   try {
     const r = await invokeCommand('searchWorkspaceFiles', {
       sessionId: props.sessionId,
@@ -109,11 +117,13 @@ async function fetchResults(): Promise<void> {
 
     results.value = r;
     highlightedIndex.value = 0;
+    emit('results-state', { count: r.length, loading: false });
   } catch {
     if (tag !== fetchTag) return;
 
     results.value = [];
     highlightedIndex.value = 0;
+    emit('results-state', { count: 0, loading: false });
   }
 }
 

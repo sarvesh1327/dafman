@@ -7,9 +7,12 @@
 // reasoning / user messages) renders full markdown via `MessageContent`.
 //
 // Wire contract: emits `submit` with the trimmed plain-text content
-// when Enter is pressed or the send button is clicked. Shift+Enter
-// inserts a newline. Disabled state flows through `EditableSync` since
-// `lexical-vue`'s composer only reads `editable` once on mount.
+// when the send chord is pressed or the send button is clicked. The
+// send chord is governed by `composer.submitKeybinding` (#88): in the
+// default `'enter'` mode plain Enter sends and Ctrl/Cmd+Enter inserts a
+// newline; in `'mod-enter'` mode that's reversed. Shift+Enter always
+// inserts a soft line break. Disabled state flows through `EditableSync`
+// since `lexical-vue`'s composer only reads `editable` once on mount.
 //
 // Markdown keystroke shortcuts (`# ` -> heading, `**bold**`, fenced
 // code, etc. auto-formatting AS YOU TYPE) are gated behind
@@ -55,6 +58,8 @@ import { lexicalTheme } from '@/lexical/theme';
 import type { DefaultSendMode } from '@/stores/chat/sessionsStore';
 import type { SendMessageAttachment } from '@/ipc/types';
 import { useToastStore } from '@/stores/app/toastStore';
+import { useSettingsStore } from '@/stores/app/settingsStore';
+import { storeToRefs } from 'pinia';
 import { runLocalSlashCommand } from '@/lib/sessionCommands';
 import SlashCommandPlugin from '@/components/chat/SlashCommandPlugin.vue';
 import MentionPlugin from '@/components/chat/MentionPlugin.vue';
@@ -79,7 +84,7 @@ const props = withDefaults(
     disabled?: boolean;
     placeholder?: string;
     enableMarkdownShortcuts?: boolean;
-    /// Per-session default for the primary send button + Ctrl+Enter.
+    /// Per-session default for the primary send button + send chord.
     /// Defaults to "steer".
     defaultMode?: DefaultSendMode;
     /// When provided, mounts the slash-command typeahead bound to
@@ -109,6 +114,11 @@ const diagEnabled =
 /// text" === "attachment index in array" naturally without a parallel
 /// ref array drifting from the editor state.
 const toasts = useToastStore();
+const settingsStore = useSettingsStore();
+const { settings } = storeToRefs(settingsStore);
+/// #88: which keystroke sends. Read reactively so a Settings change
+/// re-keys `SubmitOnEnter`'s keybinding getter without remounting.
+const submitKeybinding = computed(() => settings.value.composer?.submitKeybinding ?? 'enter');
 const commandMode = ref(false);
 
 const toolbarRef = useTemplateRef<HTMLElement>('toolbarRef');
@@ -328,7 +338,7 @@ async function onSubmit(payload: ComposerSubmitPayload) {
 
 /// Dropdown items for the SplitButton — let the user change the
 /// session's default send mode (the action attached to the primary
-/// button + plain Ctrl+Enter). Interrupt is intentionally NOT eligible
+/// button + the send chord). Interrupt is intentionally NOT eligible
 /// as a default — it always aborts the current turn, which is a
 /// destructive choice that should require an explicit modifier.
 const defaultModeItems = computed<MenuItem[]>(() => [
@@ -383,10 +393,14 @@ function onEditorReady(editor: LexicalEditor): void {
 
 const primaryLabel = computed(() => '');
 const primaryIcon = computed(() => (props.defaultMode === 'queue' ? 'pi pi-clock' : 'pi pi-send'));
+/// The chord that sends, and the one that inserts a newline, depend on
+/// the `composer.submitKeybinding` setting (#88).
+const sendChord = computed(() => (submitKeybinding.value === 'enter' ? 'Enter' : 'Ctrl+Enter'));
+const newlineChord = computed(() => (submitKeybinding.value === 'enter' ? 'Ctrl+Enter' : 'Enter'));
 const primaryTooltip = computed(() =>
   props.defaultMode === 'queue'
-    ? 'Queue (Ctrl+Enter) — wait behind current turn. Alt+Enter forces queue; Ctrl+Shift+Enter interrupts.'
-    : 'Steer (Ctrl+Enter) — send immediately into current turn. Alt+Enter queues; Ctrl+Shift+Enter interrupts.',
+    ? `Queue (${sendChord.value}) — wait behind current turn. ${newlineChord.value} inserts a newline. Alt+Enter forces queue; Ctrl+Shift+Enter interrupts.`
+    : `Steer (${sendChord.value}) — send immediately into current turn. ${newlineChord.value} inserts a newline. Alt+Enter queues; Ctrl+Shift+Enter interrupts.`,
 );
 
 /// SplitButton-style submit. Primary action runs the session's
@@ -406,7 +420,10 @@ const primaryTooltip = computed(() =>
     <div class="lex-composer-frame">
       <LexicalComposer :initial-config="initialConfig">
         <EditableSync :editable="editable" />
-        <SubmitOnEnter @submit="onSubmit" />
+        <SubmitOnEnter
+          :submit-keybinding="submitKeybinding"
+          @submit="onSubmit"
+        />
         <TypingDiagnostic v-if="diagEnabled" />
         <SlashCommandPlugin
           v-if="props.sessionId"

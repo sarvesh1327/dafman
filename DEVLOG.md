@@ -10,7 +10,23 @@
 
 ---
 
-## 2026-05-30 — Merge train (7 fix PRs + #94) + dogfood reconciliation + #88 re-spec
+## 2026-05-31 — #88 composer submit keybinding (Enter vs Ctrl+Enter setting)
+
+**Takeaway.** Composer submit is now a setting (`composer.submitKeybinding: 'enter' | 'mod-enter'`, settings v15, default `'enter'` = plain Enter sends). The genuinely hard part was the typeahead Enter collision, and the fix has two non-obvious load-bearing details that future-me must not "simplify" away:
+
+1. **Menu-active must be written synchronously, not via `watchEffect`.** `SubmitOnEnter` registers `KEY_ENTER_COMMAND` at `COMMAND_PRIORITY_HIGH`; the lexical-vue typeahead menus register at `COMMAND_PRIORITY_LOW`. Lexical runs HIGH before LOW and the first handler to return `true` wins, so in `'enter'` mode plain Enter must `return false` (defer) when a menu is open with a selectable option — otherwise `/model⏎` and `@file⏎` would SEND instead of selecting. The Enter keydown is **synchronous**, but Vue `watchEffect` flushes on a microtask, so a `watchEffect`-driven flag would be stale on the keystroke that matters. The new `src/lexical/composerMenuState.ts` is a `WeakMap<LexicalEditor, Set<'slash'|'mention'>>` written **synchronously** inside the menu callbacks (`onQueryChange` for slash, `onResultsState`/`syncMentionActive` for mention) and read synchronously in the Enter handler. WeakMap keyed by editor ⇒ multi-session safe; no window events (rule 18).
+
+2. **Ctrl+Enter newline in `'enter'` mode must CONSUME at HIGH and explicitly dispatch `INSERT_PARAGRAPH_COMMAND` + `return true` — NOT `return false`.** The menu's LOW handler ignores modifier keys, so a deferred Ctrl+Enter while a menu is open would SELECT an option instead of inserting a newline. Verified by grep that lexical-vue's menu plugin only listens to ENTER/ARROW/ESCAPE/TAB/SCROLL — it does **not** listen to `INSERT_PARAGRAPH_COMMAND` — so dispatching the paragraph command can't accidentally close the menu.
+
+**Mention no-result decision (the spec's open question).** Mention-active is tied to "the `@` picker has a selectable result OR is loading". Consequence: a **settled** `@nomatch⏎` SENDS the raw text (matching slash zero-match semantics), but while the async file search is in flight we treat the menu as active so an Enter mid-search defers rather than firing a premature send. The `loading` signal comes from a new `results-state` emit on `FilePicker.vue` (`{ count, loading }`), consumed by `MentionPlugin.vue`.
+
+**Complexity.** The Enter handler's decision tree breached ESLint `complexity` 15 (hit 17), so rather than suppress the rule (rule 20) the logic is split: `classifyEnterChord(e)` reduces the modifier combo to a small kind string, and `resolveEnterAction(e, keybinding, menuActive)` maps `(chord, mode, menuActive)` → an `EnterAction` (`passthrough` / `insertParagraph` / `submit{mode}`). `resolveEnterAction` is pure and unit-tested as a matrix; `registerSubmitOnEnter` integration-tested against a live `createEditor`.
+
+**Wire/settings.** `SETTINGS_VERSION` 14→15; `coerceComposer()` added and wired into `migrate()` (missing/invalid → `'enter'`); `composer` added to `defaultSettings()`. Mirrored `ComposerSubmitKeybinding`/`ComposerPrefs`/`composer` across `src-bun/rpc.ts` ↔ `src/ipc/types.ts`; wire-contract snapshot + a v14→v15 migration test cover it. Settings UI is a new `ComposerSettingsSection.vue` (PrimeVue `Select`) under `SettingsPanel.vue`.
+
+**Gates (port-free only; smoke/e2e/electrobun deferred to CI per the sibling-agent port contention).** `bun run lint` (vue-tsc) ✅, `bun run lint:eslint` ✅ (0 errors; left only pre-existing warnings), `bun run lint:tsc-bun` ✅, `bun test` ✅ (760 pass), `bunx vite build` ✅. E2E flows `01-create-send` & `07-export-items` updated `Control+Enter`→`Enter` for the new default; `02-at-picker`/`14-details-rail` rely on plain-Enter selection and should still pass under `'enter'` (CI verifies). Live keyboard flows are in `MANUAL_TESTS.md` (rule 10).
+
+
 
 **Takeaway.** Landed the reviewed dogfood-fix backlog as a sequential merge
 train — #84, #89, #90, #91, #92, #95, #97, then #94 — each rebased onto a

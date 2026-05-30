@@ -72,6 +72,7 @@ describe('IPC wire contracts', () => {
       tools: { defaultExcluded: [], defaultAllowed: [] },
       permissions: { defaultApproveAll: false },
       terminal: makeTerminalPrefs('platform-default'),
+      composer: { submitKeybinding: 'enter' },
     };
     expect(sample).toMatchSnapshot();
   });
@@ -104,6 +105,7 @@ describe('IPC wire contracts', () => {
       tools: { defaultExcluded: ['bash'], defaultAllowed: [] },
       permissions: { defaultApproveAll: true },
       terminal: makeTerminalPrefs('pwsh'),
+      composer: { submitKeybinding: 'mod-enter' },
     };
     expect(sample).toMatchSnapshot();
   });
@@ -151,8 +153,16 @@ describe('IPC wire contracts', () => {
       tools: { defaultExcluded: [], defaultAllowed: [] },
       permissions: { defaultApproveAll: false },
       terminal: makeTerminalPrefs('platform-default'),
+      composer: { submitKeybinding: 'enter' },
     };
     expect(sample).toMatchSnapshot();
+  });
+
+  test('ComposerPrefs shape', () => {
+    const enterMode: import('../rpc').ComposerPrefs = { submitKeybinding: 'enter' };
+    const modEnterMode: import('../rpc').ComposerPrefs = { submitKeybinding: 'mod-enter' };
+
+    expect({ enterMode, modEnterMode }).toMatchSnapshot();
   });
 
   test('ModelSummary shape', () => {

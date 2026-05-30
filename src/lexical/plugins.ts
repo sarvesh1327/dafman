@@ -18,15 +18,17 @@ import {
   $isElementNode,
   $isRangeSelection,
   COMMAND_PRIORITY_HIGH,
+  INSERT_PARAGRAPH_COMMAND,
   KEY_ENTER_COMMAND,
   type LexicalEditor,
   type LexicalNode,
 } from 'lexical';
-import { defineComponent, onBeforeUnmount, onMounted, watch } from 'vue';
+import { defineComponent, onBeforeUnmount, onMounted, watch, type PropType } from 'vue';
 import { useLexicalComposer } from 'lexical-vue/LexicalComposer';
 import { rendererLog } from '@/ipc/rendererLog';
 import { $isAttachmentNode } from '@/lexical/AttachmentNode';
-import type { SendMessageAttachment } from '@/ipc/types';
+import { isComposerMenuActive } from '@/lexical/composerMenuState';
+import type { ComposerSubmitKeybinding, SendMessageAttachment } from '@/ipc/types';
 import { toErrorMessage } from '@/lib/errorMessage';
 
 /// Extract the editor content as a markdown string, trim it, clear the
@@ -112,26 +114,43 @@ export const EditableSync = defineComponent({
   },
 });
 
-/// Submit-on-Ctrl-Enter behaviour for the composer.
+/// Submit-on-Enter behaviour for the composer, driven by the
+/// `composer.submitKeybinding` user setting (issue #88).
 ///
-/// New mapping (IDE convention — plain Enter is reserved for Lexical's
-/// own paragraph-break command so markdown block breaks reach the
-/// transcript):
-///   * `Ctrl+Enter` -> emit `submit` with `mode: "default"`
-///   * `Ctrl+Shift+Enter` -> emit `submit` with `mode: "interrupt"`
-///   * `Alt+Enter` -> emit `submit` with `mode: "queue"` (explicit
-///     non-default queue regardless of the session's default)
-///   * `Enter` / `Shift+Enter` -> not consumed (Lexical default — new
-///     paragraph / soft break respectively)
-///   * IME composition (`event.isComposing` or `keyCode === 229`) ->
-///     not consumed.
+/// Two modes:
+///
+/// `'enter'` (default — conventional chat):
+///   * `Enter`              -> submit `default` (unless a slash/mention
+///                             typeahead menu is open with a selectable
+///                             option, in which case we DEFER so Enter
+///                             selects the menu item)
+///   * `Ctrl/Cmd+Enter`     -> insert a newline (paragraph break). We
+///                             consume at HIGH and dispatch
+///                             `INSERT_PARAGRAPH_COMMAND` explicitly,
+///                             because while a menu is open the LOW menu
+///                             handler ignores modifiers and would
+///                             otherwise SELECT an option instead of
+///                             inserting a newline.
+///   * `Shift+Enter`        -> not consumed (Lexical soft line break)
+///   * `Ctrl+Shift+Enter`   -> submit `interrupt`
+///   * `Alt+Enter`          -> submit `queue`
+///
+/// `'mod-enter'` (legacy IDE convention):
+///   * `Ctrl/Cmd+Enter`     -> submit `default`
+///   * `Ctrl+Shift+Enter`   -> submit `interrupt`
+///   * `Alt+Enter`          -> submit `queue`
+///   * `Enter` / `Shift+Enter` -> not consumed (Lexical paragraph /
+///                             soft break)
+///
+/// IME composition (`event.isComposing` / `key === 'Process'`) is never
+/// consumed in either mode.
 ///
 /// Lexical command priority: HIGH, so we run before the default Enter
-/// handler. We only `return true` (consume) when one of our chord
-/// matches fired — otherwise return false so the default paragraph
-/// command can run.
+/// handler and before the typeahead menus' LOW handler. We `return true`
+/// (consume) when we submit or insert a newline; `return false`
+/// (passthrough/defer) otherwise.
 ///
-/// `mode` semantics:
+/// `mode` (submit) semantics:
 ///   "default"   -> use the session's `defaultSendMode` (Steer by default)
 ///   "queue"     -> force the queue mode regardless of default
 ///   "interrupt" -> abort then send (force, regardless of default)
@@ -142,51 +161,145 @@ export interface ComposerSubmitPayload {
   attachments?: SendMessageAttachment[];
 }
 
-export const SubmitOnEnter = defineComponent({
-  name: 'SubmitOnEnter',
-  emits: ['submit'],
-  setup(_, { emit }) {
-    const editor = useLexicalComposer();
-    const unregister = editor.registerCommand(
-      KEY_ENTER_COMMAND,
-      (event) => {
-        const e = event;
+/// The action a given Enter keystroke should produce. Split out as a
+/// pure function so the keybinding decision matrix is unit-testable
+/// without mounting a Lexical editor, and so the command handler stays
+/// well under the ESLint complexity cap.
+export type EnterAction =
+  | { type: 'submit'; mode: ComposerSubmitMode }
+  | { type: 'insertParagraph' }
+  | { type: 'passthrough' };
 
-        if (!e) return false;
+/// Minimal shape we read off the Enter `KeyboardEvent`. Declared so the
+/// resolver can be tested with plain object literals.
+export interface EnterChord {
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}
 
-        if (e.isComposing || e.key === 'Process') return false;
+/// The modifier combination of an Enter keystroke, normalized so the
+/// action resolver can `switch` instead of chaining boolean guards
+/// (keeps each function well under the ESLint complexity cap).
+export type EnterChordKind = 'ctrl' | 'ctrl-shift' | 'alt' | 'shift' | 'plain' | 'other';
 
-        // We only handle modifier chords. Plain Enter / Shift+Enter
-        // fall through to Lexical's default paragraph / soft-break
-        // commands so markdown block breaks work.
-        const ctrl = e.ctrlKey || e.metaKey; // metaKey for macOS
-        const isCtrlEnter = ctrl && !e.shiftKey && !e.altKey;
-        const isCtrlShiftEnter = ctrl && e.shiftKey && !e.altKey;
-        const isAltEnter = e.altKey && !ctrl && !e.shiftKey;
-        let mode: ComposerSubmitMode | null = null;
+/// Classify an Enter chord. `ctrl` folds in `metaKey` (macOS Cmd).
+/// Unrecognized combinations (e.g. Ctrl+Alt) map to `'other'`, which
+/// always passes through to Lexical's default handling.
+export function classifyEnterChord(e: EnterChord): EnterChordKind {
+  const ctrl = e.ctrlKey || e.metaKey;
+  const key = `${ctrl ? 'c' : ''}${e.shiftKey ? 's' : ''}${e.altKey ? 'a' : ''}`;
 
-        if (isCtrlEnter) mode = 'default';
-        else if (isCtrlShiftEnter) mode = 'interrupt';
-        else if (isAltEnter) mode = 'queue';
+  switch (key) {
+    case 'cs':
+      return 'ctrl-shift';
+    case 'c':
+      return 'ctrl';
+    case 'a':
+      return 'alt';
+    case 's':
+      return 'shift';
+    case '':
+      return 'plain';
+    default:
+      return 'other';
+  }
+}
 
-        if (mode === null) return false;
+/// Decide what an Enter keystroke does given the active keybinding and
+/// whether a composer typeahead menu is currently open with a
+/// selectable option. Pure — no editor access, no side effects.
+export function resolveEnterAction(
+  e: EnterChord,
+  keybinding: ComposerSubmitKeybinding,
+  menuActive: boolean,
+): EnterAction {
+  const chord = classifyEnterChord(e);
 
-        e.preventDefault();
-        const result = consumeComposerText(editor);
+  // Interrupt / queue chords are identical in both modes.
+  if (chord === 'ctrl-shift') return { type: 'submit', mode: 'interrupt' };
 
-        if (result !== null) {
-          const payload: ComposerSubmitPayload = {
-            text: result.text,
-            mode,
-            ...(result.attachments.length > 0 ? { attachments: result.attachments } : {}),
-          };
+  if (chord === 'alt') return { type: 'submit', mode: 'queue' };
 
-          emit('submit', payload);
-        }
+  if (keybinding === 'mod-enter') {
+    // Ctrl/Cmd+Enter sends; plain / Shift+Enter fall through to
+    // Lexical's paragraph / soft break.
+    return chord === 'ctrl' ? { type: 'submit', mode: 'default' } : { type: 'passthrough' };
+  }
+
+  // keybinding === 'enter': Ctrl/Cmd+Enter inserts a newline.
+  if (chord === 'ctrl') return { type: 'insertParagraph' };
+
+  // Shift+Enter (soft break) and unrecognized combos fall through.
+  if (chord !== 'plain') return { type: 'passthrough' };
+
+  // Plain Enter: defer to an open typeahead menu, else submit.
+  return menuActive ? { type: 'passthrough' } : { type: 'submit', mode: 'default' };
+}
+
+/// Registers the Enter keybinding command on `editor`. `getKeybinding`
+/// is read on every keystroke so a live settings change takes effect
+/// without remounting. Returns the unregister callback.
+export function registerSubmitOnEnter(
+  editor: LexicalEditor,
+  getKeybinding: () => ComposerSubmitKeybinding,
+  onSubmit: (payload: ComposerSubmitPayload) => void,
+): () => void {
+  return editor.registerCommand(
+    KEY_ENTER_COMMAND,
+    (event) => {
+      const e = event;
+
+      if (!e) return false;
+
+      if (e.isComposing || e.key === 'Process') return false;
+
+      const action = resolveEnterAction(e, getKeybinding(), isComposerMenuActive(editor));
+
+      if (action.type === 'passthrough') return false;
+
+      e.preventDefault();
+
+      if (action.type === 'insertParagraph') {
+        editor.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined);
 
         return true;
-      },
-      COMMAND_PRIORITY_HIGH,
+      }
+
+      const result = consumeComposerText(editor);
+
+      if (result !== null) {
+        const payload: ComposerSubmitPayload = {
+          text: result.text,
+          mode: action.mode,
+          ...(result.attachments.length > 0 ? { attachments: result.attachments } : {}),
+        };
+
+        onSubmit(payload);
+      }
+
+      return true;
+    },
+    COMMAND_PRIORITY_HIGH,
+  );
+}
+
+export const SubmitOnEnter = defineComponent({
+  name: 'SubmitOnEnter',
+  props: {
+    submitKeybinding: {
+      type: String as PropType<ComposerSubmitKeybinding>,
+      default: 'enter',
+    },
+  },
+  emits: ['submit'],
+  setup(props, { emit }) {
+    const editor = useLexicalComposer();
+    const unregister = registerSubmitOnEnter(
+      editor,
+      () => props.submitKeybinding,
+      (payload) => emit('submit', payload),
     );
 
     onBeforeUnmount(() => unregister());

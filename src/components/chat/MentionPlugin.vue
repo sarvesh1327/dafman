@@ -23,7 +23,7 @@
 ///      us the textNode, then we insert the pill using the
 ///      attachment cached in `pendingAttachment`.
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { TextNode, $createTextNode, $isTextNode } from 'lexical';
 import {
   TypeaheadMenuPlugin,
@@ -32,6 +32,7 @@ import {
 } from 'lexical-vue/LexicalTypeaheadMenuPlugin';
 import { useLexicalComposer } from 'lexical-vue/LexicalComposer';
 import { $createAttachmentNode } from '@/lexical/AttachmentNode';
+import { setComposerMenuActive } from '@/lexical/composerMenuState';
 import type { SendMessageAttachment } from '@/ipc/types';
 import FilePicker from '@/components/shared/FilePicker.vue';
 import { useEventListener } from '@vueuse/core';
@@ -52,6 +53,39 @@ const menuParent = ref<HTMLElement | null>(null);
 const pickerRef = ref<InstanceType<typeof FilePicker> | null>(null);
 /// Tunnel: set by click handlers, consumed by onSelectOption.
 const pendingAttachment = ref<SendMessageAttachment | null>(null);
+/// Whether the `@` typeahead is currently matching (query non-null).
+const menuOpen = ref(false);
+/// Latest FilePicker result count + in-flight state, mirrored from its
+/// `results-state` event so the menu-active decision is reactive.
+const resultCount = ref(0);
+const resultsLoading = ref(false);
+
+/// Report mention menu-active synchronously to the per-editor registry
+/// `SubmitOnEnter` reads on each Enter keystroke (issue #88).
+///
+/// Decision (the rubber-duck "no-result" open question): mention-active
+/// while the menu is open AND it either has a selectable result OR is
+/// still loading. A SETTLED empty result set (`@nomatch`) is NOT active,
+/// so plain Enter SENDS the raw `@nomatch` text — matching slash-command
+/// zero-match semantics. Treating "loading" as active avoids the async
+/// race where Enter pressed before the (sub-ms, cached) file search
+/// returns would otherwise send `@query` instead of selecting the
+/// result that was about to appear.
+function syncMentionActive(): void {
+  setComposerMenuActive(
+    editor,
+    'mention',
+    menuOpen.value && (resultsLoading.value || resultCount.value > 0),
+  );
+}
+
+function onResultsState(payload: { count: number; loading: boolean }): void {
+  resultCount.value = payload.count;
+  resultsLoading.value = payload.loading;
+  syncMentionActive();
+}
+
+onBeforeUnmount(() => setComposerMenuActive(editor, 'mention', false));
 
 onMounted(() => {
   if (typeof document !== 'undefined') menuParent.value = document.body;
@@ -72,6 +106,14 @@ const triggerFn = useBasicTypeaheadTriggerMatch('@', {
 
 function onQueryChange(q: string | null) {
   query.value = q ?? '';
+  menuOpen.value = q !== null;
+
+  if (!menuOpen.value) {
+    resultCount.value = 0;
+    resultsLoading.value = false;
+  }
+
+  syncMentionActive();
 }
 
 function replaceTriggerWith(
@@ -110,6 +152,8 @@ function onSelectOption(payload: {
   }
 
   closeMenu();
+  menuOpen.value = false;
+  setComposerMenuActive(editor, 'mention', false);
 }
 
 function onWindowKey(e: KeyboardEvent): void {
@@ -148,6 +192,7 @@ useEventListener(window, 'keydown', onWindowKey, true);
             :external-query="query"
             :show-search-input="false"
             initial-focus="none"
+            @results-state="onResultsState"
             @select="
               (att: SendMessageAttachment) => {
                 pendingAttachment = att;

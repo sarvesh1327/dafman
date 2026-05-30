@@ -58,6 +58,7 @@ describe('SettingsService', () => {
       tools: { defaultExcluded: [], defaultAllowed: [] },
       permissions: { defaultApproveAll: false },
       terminal: defaultSettings().terminal,
+      composer: { submitKeybinding: 'enter' as const },
     };
     const written = await svc.update(next);
     expect(written).toEqual(next);
@@ -114,6 +115,7 @@ describe('SettingsService', () => {
           serialize: true,
         },
       },
+      composer: { submitKeybinding: 'enter' },
     });
     const reloaded = SettingsService.loadOrDefault(path);
     expect(reloaded.get().layout.dockview).toEqual(blob);
@@ -499,12 +501,81 @@ describe('SettingsService', () => {
     expect(bogus.permissions.defaultApproveAll).toBe(false);
   });
 
-  test('migrate rejects bogus fields', () => {
-    const settings = migrate({
-      version: 1,
-      appearance: { theme: 'neon', reasoningVisibility: 'verbose' },
+  test('v14 document migrates to v15 with default composer.submitKeybinding = enter', () => {
+    // #88: the composer section was added in v15. A v14 document lacks
+    // it entirely, so migration must backfill the new default
+    // ('enter' = plain Enter sends).
+    const dir = newTempDir();
+    const path = join(dir, 'settings.json');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 14,
+        appearance: {
+          theme: 'dark',
+          reasoningVisibility: 'compact',
+          streaming: false,
+          enableMermaid: false,
+        },
+        layout: { dockview: null },
+        workspaces: { recent: [], defaultWorkspace: '' },
+        notifications: { turnEnd: false, waitingForInput: true },
+        tools: { defaultExcluded: [], defaultAllowed: [] },
+        permissions: { defaultApproveAll: false },
+      }),
+    );
+    const svc = SettingsService.loadOrDefault(path);
+    const settings = svc.get();
+    expect(settings.version).toBe(SETTINGS_VERSION);
+    expect(settings.composer).toEqual({ submitKeybinding: 'enter' });
+    // Existing fields untouched.
+    expect(settings.appearance.theme).toBe('dark');
+  });
+
+  test('composer coercion: explicit mod-enter preserved, invalid falls back to enter', () => {
+    const modEnter = migrate({
+      version: SETTINGS_VERSION,
+      appearance: {
+        theme: 'system',
+        reasoningVisibility: 'compact',
+        streaming: false,
+        enableMermaid: false,
+      },
+      layout: { dockview: null },
+      workspaces: { recent: [], defaultWorkspace: '' },
+      notifications: { turnEnd: false, waitingForInput: true },
+      composer: { submitKeybinding: 'mod-enter' },
     });
-    expect(settings.appearance.theme).toBe('system');
-    expect(settings.appearance.reasoningVisibility).toBe('compact');
+    expect(modEnter.composer.submitKeybinding).toBe('mod-enter');
+
+    const bogus = migrate({
+      version: SETTINGS_VERSION,
+      appearance: {
+        theme: 'system',
+        reasoningVisibility: 'compact',
+        streaming: false,
+        enableMermaid: false,
+      },
+      layout: { dockview: null },
+      workspaces: { recent: [], defaultWorkspace: '' },
+      notifications: { turnEnd: false, waitingForInput: true },
+      composer: { submitKeybinding: 'ctrl-shift-enter' as unknown as 'enter' },
+    });
+    expect(bogus.composer.submitKeybinding).toBe('enter');
+
+    // Missing section entirely → default.
+    const missing = migrate({
+      version: SETTINGS_VERSION,
+      appearance: {
+        theme: 'system',
+        reasoningVisibility: 'compact',
+        streaming: false,
+        enableMermaid: false,
+      },
+      layout: { dockview: null },
+      workspaces: { recent: [], defaultWorkspace: '' },
+      notifications: { turnEnd: false, waitingForInput: true },
+    });
+    expect(missing.composer.submitKeybinding).toBe('enter');
   });
 });

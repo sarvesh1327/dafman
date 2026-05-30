@@ -70,7 +70,30 @@ walked by the user. After dogfooding, items move to verified (then to
 section is verified) or get a GitHub issue filed (with label
 `manual-test-fail`) and removed from this file.
 
-### Issue #76 — Fenced CodeMirror code blocks follow app theme (2026-05-30)
+### Issue #88 — Composer submit keybinding setting (Enter vs Ctrl+Enter) (2026-05-31)
+
+#### 88.1 - Default Enter-sends mode: plain Enter sends, Ctrl+Enter inserts a newline.
+
+- [ ] result: 
+- **Steps:** Fresh profile (or Settings → Composer = "Enter sends, Ctrl+Enter newline"). In the composer type `hello` then press **Enter**. Type a second message `line one`, press **Ctrl+Enter**, type `line two`, then press **Enter**.
+- **Expected:** The first `hello` sends immediately on Enter. In the second message Ctrl+Enter inserts a newline (caret drops to a new line, nothing sends) and the final Enter sends the two-line message intact.
+- **Why not automated:** Real keyboard chords against a live Lexical editor + IME state; port-bound e2e is run by CI, not locally here.
+
+#### 88.2 - Enter-sends mode: open slash/mention menus still select on plain Enter.
+
+- [ ] result: 
+- **Steps:** In Enter-sends mode type `/mod` and, with the slash menu showing a highlighted match, press **Enter**. Separately type `@` then a few chars that match a workspace file and press **Enter** while the picker shows a result. Then type `/zzznomatch` (no match) and press **Enter**.
+- **Expected:** `/mod⏎` selects the highlighted slash command (does NOT send raw text). `@file⏎` inserts the file mention (does NOT send). `/zzznomatch⏎` (no selectable result) sends the raw text.
+- **Why not automated:** Async file-search timing + typeahead menu focus; covered by e2e flows 02/14 in CI but verified live here for the new default.
+
+#### 88.3 - Mod-Enter mode preserves the previous behavior.
+
+- [ ] result: 
+- **Steps:** Settings → Composer = "Ctrl+Enter sends, Enter newline". Type `hello`, press **Enter** (expect newline), type more, press **Ctrl+Enter** (expect send). Re-check that `/` and `@` menus still select with Enter.
+- **Expected:** Plain Enter inserts newlines, Ctrl+Enter sends. Slash/mention menus still select on Enter. Setting persists across an app restart.
+- **Why not automated:** Same live-keyboard + persistence-across-restart reasons as 88.1.
+
+
 
 #### 76.1 - Transcript fenced code blocks switch between light and dark CodeMirror themes.
 

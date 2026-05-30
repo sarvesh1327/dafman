@@ -15,6 +15,8 @@ import { homedir } from 'node:os';
 import { mkdir } from 'node:fs/promises';
 import type {
   Appearance,
+  ComposerPrefs,
+  ComposerSubmitKeybinding,
   Layout,
   NotificationPrefs,
   PermissionsPrefs,
@@ -29,7 +31,7 @@ import { AppError } from '../shared/errors';
 import { log } from '../observability/logging';
 import { toErrorMessage } from '../shared/errorMessage';
 
-export const SETTINGS_VERSION = 14;
+export const SETTINGS_VERSION = 15;
 
 /// One-time backfill: returns `<homedir>/dafman` (created on demand),
 /// or `""` on failure. Used by `src-bun/index.ts` to populate the
@@ -65,6 +67,7 @@ const WORKSPACES_MRU_LIMIT = 10;
 
 const VALID_THEMES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
 const VALID_REASONING: readonly ReasoningVisibility[] = ['hidden', 'compact', 'expanded'];
+const VALID_SUBMIT_KEYBINDINGS: readonly ComposerSubmitKeybinding[] = ['enter', 'mod-enter'];
 
 export function defaultSettings(): Settings {
   return {
@@ -109,6 +112,7 @@ export function defaultSettings(): Settings {
         serialize: true,
       },
     },
+    composer: { submitKeybinding: 'enter' },
   };
 }
 
@@ -331,6 +335,26 @@ function coerceTerminal(raw: unknown): TerminalPrefs {
   };
 }
 
+/// Coerces the `composer` blob (issue #88). Missing or invalid
+/// `submitKeybinding` falls back to `'enter'` (plain Enter sends) — the
+/// new default. Pre-v15 documents lack the section entirely, so existing
+/// users migrate to the conventional Enter-sends behaviour; they can
+/// switch back to `'mod-enter'` from Settings → Composer.
+function coerceComposer(raw: unknown): ComposerPrefs {
+  const base = defaultSettings().composer;
+
+  if (!raw || typeof raw !== 'object') return base;
+
+  const obj = raw as Record<string, unknown>;
+  const submitKeybinding = VALID_SUBMIT_KEYBINDINGS.includes(
+    obj.submitKeybinding as ComposerSubmitKeybinding,
+  )
+    ? (obj.submitKeybinding as ComposerSubmitKeybinding)
+    : base.submitKeybinding;
+
+  return { submitKeybinding };
+}
+
 export function migrate(input: unknown): Settings {
   const defaults = defaultSettings();
 
@@ -347,6 +371,7 @@ export function migrate(input: unknown): Settings {
     tools: coerceTools(raw.tools),
     permissions: coercePermissions(raw.permissions),
     terminal: coerceTerminal(raw.terminal),
+    composer: coerceComposer(raw.composer),
   };
 }
 

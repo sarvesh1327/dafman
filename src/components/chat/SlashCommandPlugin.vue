@@ -33,6 +33,7 @@ import {
   useBasicTypeaheadTriggerMatch,
 } from 'lexical-vue/LexicalTypeaheadMenuPlugin';
 import { useLexicalComposer } from 'lexical-vue/LexicalComposer';
+import { setComposerMenuActive } from '@/lexical/composerMenuState';
 import { SESSION_COMMANDS, type SessionCommand } from '@/lib/sessionCommands';
 
 class SlashOption extends MenuOption {
@@ -85,13 +86,19 @@ const unregisterTab = editor.registerCommand(
       }
     });
     menuOpen.value = false;
+    setComposerMenuActive(editor, 'slash', false);
 
     return true;
   },
   COMMAND_PRIORITY_HIGH,
 );
 
-onBeforeUnmount(() => unregisterTab());
+onBeforeUnmount(() => {
+  unregisterTab();
+  // Defensive: ensure we never leave this editor marked menu-active
+  // (which would make `SubmitOnEnter` defer plain Enter forever).
+  setComposerMenuActive(editor, 'slash', false);
+});
 
 /// Force the typeahead anchor to mount inside <body> so it positions
 /// page-absolute (not as a flex child of the composer row). Default
@@ -151,6 +158,12 @@ function keepSelectedVisible(
 function onQueryChange(q: string | null) {
   query.value = q ?? '';
   menuOpen.value = q !== null;
+  // Synchronous (not a watcher) so the state is current when
+  // `KEY_ENTER_COMMAND` fires in the same tick. Active only when there's
+  // a selectable option — a zero-match `/foo` stays inactive so plain
+  // Enter SENDS the raw message (matching the unmatched-slash comment
+  // above).
+  setComposerMenuActive(editor, 'slash', menuOpen.value && filteredOptions.value.length > 0);
 }
 
 async function onSelectOption(payload: {
@@ -167,6 +180,7 @@ async function onSelectOption(payload: {
   });
   closeMenu();
   menuOpen.value = false;
+  setComposerMenuActive(editor, 'slash', false);
 
   try {
     await option.cmd.run(props.sessionId);

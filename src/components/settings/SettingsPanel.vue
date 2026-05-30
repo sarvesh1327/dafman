@@ -27,6 +27,7 @@ import { useToastStore } from '@/stores/app/toastStore';
 import { openLogFolder as openLogFolderAction } from '@/lib/pathActions';
 import SettingsGroup from '@/components/settings/SettingsGroup.vue';
 import AppearanceSettingsSection from '@/components/settings/AppearanceSettingsSection.vue';
+import ComposerSettingsSection from '@/components/settings/ComposerSettingsSection.vue';
 import TerminalSettingsSection from '@/components/settings/TerminalSettingsSection.vue';
 import WorkspaceSettingsSection from '@/components/settings/WorkspaceSettingsSection.vue';
 import NotificationSettingsSection from '@/components/settings/NotificationSettingsSection.vue';
@@ -50,6 +51,7 @@ onMounted(() => {
 /// in the template (which would un-couple read and write paths).
 const collapsed = reactive<Record<string, boolean>>({
   appearance: false,
+  composer: false,
   workspaces: false,
   terminal: false,
   notifications: false,
@@ -77,6 +79,8 @@ const defaultApproveAll = computed<boolean>({
 <template>
   <div class="settings-panel">
     <AppearanceSettingsSection v-model:collapsed="collapsed.appearance" />
+
+    <ComposerSettingsSection v-model:collapsed="collapsed.composer" />
 
     <WorkspaceSettingsSection v-model:collapsed="collapsed.workspaces" />
 

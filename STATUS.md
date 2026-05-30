@@ -24,7 +24,12 @@
 - [Sprint E — Light mode visual audit](https://github.com/AsafMah/dafman/milestone/4) (2 issues)
 - [M1 — Features (post-sprint backlog)](https://github.com/AsafMah/dafman/milestone/5) (9 issues)
 
-**Recently fixed:** #94 — Library Agents Refresh now reloads the Copilot SDK
+**Recently fixed:** #88 — composer submit is now a user setting
+(Settings → Composer): **Enter sends / Ctrl+Enter newline** (new default) vs
+**Ctrl+Enter sends / Enter newline** (previous behavior); settings v15, existing
+users migrate to `'enter'`. Plain Enter still selects open slash/mention
+typeahead items; Ctrl+Enter inserts a newline even with a menu open. 2026-05-31.
+#94 — Library Agents Refresh now reloads the Copilot SDK
 (not just the filesystem listing); mount + session-switch stay list-only so only
 the explicit Refresh action triggers an SDK reload. 2026-05-30. #97 — discovered
 MCP servers now key off the focused workspace (`lastFocusedSessionId`) instead of
