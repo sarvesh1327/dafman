@@ -26,6 +26,7 @@ import { type AgentFileSpec, type AgentScope as AgentFileScope } from '../librar
 import { toErrorMessage } from '../shared/errorMessage';
 import { commandResultBlobAttachment } from './sessionHelpers';
 import {
+  type AgentLoadDiagnostics,
   wrapSdkError,
   type SessionEntryView,
   type SessionServiceContext,
@@ -149,6 +150,7 @@ export class SessionRegistry {
   /// the dafman handler path.
   private readonly approveAllBySession = new Map<string, boolean>();
   private readonly modeBySession = new Map<string, SessionMode>();
+  private readonly agentDiagnosticsBySession = new Map<string, AgentLoadDiagnostics>();
 
   /// Context port shared with sibling services (Phase D.3). Holds
   /// `getEntry` and `wrapSdk` so services don't import the entries
@@ -182,6 +184,7 @@ export class SessionRegistry {
   ) {
     this.serviceCtx = {
       getEntry: (sessionId) => this.getEntryOrThrow(sessionId),
+      getAgentLoadDiagnostics: (sessionId) => this.agentDiagnosticsBySession.get(sessionId),
       wrapSdk: wrapSdkError,
     };
     this.plans = new SessionPlanService(this.serviceCtx);
@@ -605,6 +608,7 @@ export class SessionRegistry {
     }
 
     this.approveAllBySession.delete(sessionId);
+    this.agentDiagnosticsBySession.delete(sessionId);
     const client = tryGetClient();
 
     try {
@@ -627,7 +631,27 @@ export class SessionRegistry {
   /// `SessionEventForwarder` — the registry only owns the
   /// `session.on(...)` subscription that calls this.
   private forward(sessionId: string, event: SessionEvent): void {
+    this.captureAgentLoadDiagnostics(sessionId, event);
     this.forwarder.forward(sessionId, event);
+  }
+
+  private captureAgentLoadDiagnostics(sessionId: string, event: SessionEvent): void {
+    if (event.type !== 'session.custom_agents_updated') return;
+
+    const data = (event as { data?: unknown }).data;
+
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+
+    const record = data as { errors?: unknown; warnings?: unknown };
+
+    this.agentDiagnosticsBySession.set(sessionId, {
+      errors: Array.isArray(record.errors)
+        ? record.errors.filter((item): item is string => typeof item === 'string')
+        : [],
+      warnings: Array.isArray(record.warnings)
+        ? record.warnings.filter((item): item is string => typeof item === 'string')
+        : [],
+    });
   }
 
   async send(
@@ -903,6 +927,9 @@ export class SessionRegistry {
       name: string;
       path: string;
       canonical: boolean;
+      loadStatus: 'loaded' | 'rejected' | 'unknown';
+      loadMessage?: string;
+      loadWarnings?: string[];
     }>
   > {
     return this.agents.listFiles(sessionId, options);
@@ -916,6 +943,9 @@ export class SessionRegistry {
       name: string;
       path: string;
       canonical: boolean;
+      loadStatus: 'loaded' | 'rejected' | 'unknown';
+      loadMessage?: string;
+      loadWarnings?: string[];
     }>
   > {
     return this.agents.listFilesGlobal();
@@ -1067,6 +1097,7 @@ export class SessionRegistry {
     // the SDK never sees a hung onPermissionRequest / etc.
     this.pending.settleForSession(sessionId, 'session disconnected');
     this.approveAllBySession.delete(sessionId);
+    this.agentDiagnosticsBySession.delete(sessionId);
     entry.unsubscribe();
 
     try {
@@ -1127,6 +1158,7 @@ export class SessionRegistry {
 
       this.entries.delete(id);
       this.approveAllBySession.delete(id);
+      this.agentDiagnosticsBySession.delete(id);
     }
   }
 }

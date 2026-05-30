@@ -22,6 +22,11 @@ export interface SessionEntryView {
   workingDirectory?: string;
 }
 
+export interface AgentLoadDiagnostics {
+  errors: string[];
+  warnings: string[];
+}
+
 export interface SessionServiceContext {
   /// Resolve a sessionId to its entry; throws `AppError.sessionNotFound`
   /// when the session is not registered (the same behavior every
@@ -30,6 +35,10 @@ export interface SessionServiceContext {
   /// = ctx.getEntry(sessionId)` followed by an `await ctx.wrapSdk
   /// (...)` for the SDK call).
   getEntry(sessionId: string): SessionEntryView;
+  /// Latest `session.custom_agents_updated` diagnostics captured from
+  /// the SDK event stream. Undefined means the session hasn't emitted
+  /// an agent-load event yet.
+  getAgentLoadDiagnostics?(sessionId: string): AgentLoadDiagnostics | undefined;
   /// Run an SDK-touching function and rewrap any rejection as
   /// `AppError.sdk(toErrorMessage(err))`. Mirrors what every registry
   /// method inlined before extraction. `AppError` rejections pass

@@ -26,7 +26,11 @@
 
 **Recently fixed:** #93 — Library Agents / Skills / MCP session-switch
 auto-refreshes now delay the visible loading affordance so cached/instant reloads
-do not flash `Loading…` while slow reloads still show feedback. 2026-05-31. #94 — Library Agents Refresh now reloads the Copilot SDK
+do not flash `Loading…` while slow reloads still show feedback. 2026-05-31. #81
+— Library Agents now annotates filesystem-discovered
+custom agent files with SDK load state; rejected files are visibly flagged and
+selection / `/agent <name>` reports the validation failure instead of "not
+found". 2026-05-31. #94 — Library Agents Refresh now reloads the Copilot SDK
 (not just the filesystem listing); mount + session-switch stay list-only so only
 the explicit Refresh action triggers an SDK reload. 2026-05-30. #97 — discovered
 MCP servers now key off the focused workspace (`lastFocusedSessionId`) instead of

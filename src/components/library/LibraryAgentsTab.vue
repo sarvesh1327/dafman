@@ -100,6 +100,13 @@ async function onSelect(name: string) {
   await selectSessionAgent(name);
 }
 
+function onSelectRejected(entry: AgentFileEntry) {
+  toasts.error(
+    `Agent "${entry.name}" failed to load`,
+    entry.loadMessage ?? `Fix ${entry.path}, then refresh agents.`,
+  );
+}
+
 async function onDeselect() {
   await deselectAgent();
 }
@@ -136,8 +143,8 @@ const grouped = computed(() => {
 // ---------- Create / edit form ----------
 const showForm = ref(false);
 /// Form mode. 'create' refuses to clobber; 'edit' allows overwrite +
-/// passes the preserved unknown-frontmatter tail through so the SDK's
-/// custom keys (mcp-servers, github.toolsets, etc.) survive a save.
+/// passes the preserved non-modeled frontmatter tail through so direct-
+/// edit keys (`mcp-servers`, `github`, plugin keys, etc.) survive a save.
 const formMode = ref<'create' | 'edit'>('create');
 const formScope = ref<AgentFileScope>('user');
 const formName = ref('');
@@ -383,6 +390,7 @@ function onHeaderAction(action: string) {
       :agent-busy-name="agentBusyName"
       :active-session="!!activeSession"
       @select="onSelect"
+      @select-rejected="onSelectRejected"
       @deselect="onDeselect"
       @edit="openEditForm"
       @reveal="reveal"
@@ -398,6 +406,7 @@ function onHeaderAction(action: string) {
       :agent-busy-name="agentBusyName"
       :active-session="!!activeSession"
       @select="onSelect"
+      @select-rejected="onSelectRejected"
       @deselect="onDeselect"
       @edit="openEditForm"
       @reveal="reveal"
@@ -442,10 +451,10 @@ function onHeaderAction(action: string) {
               aria-hidden="true"
             />
             <span>
-              <strong>Unknown frontmatter keys preserved:</strong>
+              <strong>Additional frontmatter preserved:</strong>
               edits won't strip
               <code>mcp-servers</code>, <code>github</code>, plugin keys, etc. Reveal the file to
-              inspect them.
+              inspect strict SDK-modeled keys before saving.
             </span>
           </div>
           <label class="form-field">

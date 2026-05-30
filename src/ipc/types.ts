@@ -338,6 +338,9 @@ export interface AgentFileEntry {
   name: string;
   path: string;
   canonical: boolean;
+  loadStatus: 'loaded' | 'rejected' | 'unknown';
+  loadMessage?: string;
+  loadWarnings?: string[];
 }
 
 export type InstructionScope = 'global' | 'project';

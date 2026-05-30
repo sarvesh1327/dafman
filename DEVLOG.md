@@ -16,6 +16,7 @@ tab content visible instead of briefly swapping to `Loading…`; reloads that st
 pending past 180 ms still surface the loading affordance.
 
 **Receipts.**
+
 - Shared seam: `src/composables/library/useDelayedLoadedFlag.ts` mirrors the
   #78 `useTimeoutFn` delay and uses a reload generation token so an older reload
   cannot cancel a newer pending reload.
@@ -29,6 +30,49 @@ pending past 180 ms still surface the loading affordance.
   Electrobun build are deferred to CI. Passed locally: `bun run lint`,
   `bun run lint:eslint`, `bun test`, `bunx vite build`.
 
+## 2026-05-31 — #81 SDK-rejected custom agents are visible and actionable
+
+**Takeaway.** Library → Agents no longer treats every `.agent.md` discovered on
+disk as selectable. Session-scoped rows now compare the filesystem scan with
+`session.rpc.agent.list` and the latest `session.custom_agents_updated`
+diagnostics; files missing from the SDK-loaded set are flagged as **SDK
+rejected**, show the validation message, and both the row action and
+`/agent <name>` surface the actionable failure.
+
+**Receipts.**
+
+- SDK diagnostics shape verified: `@github/copilot-sdk` models
+  `session.custom_agents_updated` as ephemeral data with `agents`, fatal
+  `errors`, and non-fatal `warnings`
+  (`node_modules/@github/copilot-sdk/dist/generated/session-events.d.ts:6238-6282`).
+- SDK parser/source check: `@github/copilot/app.js:242` has the shared
+  frontmatter parser (`U2`) that warns on truly-unknown keys and returns
+  `kind:"error"` on `safeParse` failure; `@github/copilot/app.js:3091` wires
+  custom agents through strict `github` / `mcp-servers` schemas and reports
+  malformed frontmatter as load errors.
+- Backend coverage:
+  `src-bun/__tests__/sessionAgentsServiceListFiles.test.ts` marks accepted vs.
+  rejected fixture files, preserves warnings for loaded files, and rejects
+  selecting a filesystem-only broken agent with the SDK validation message.
+- Wire coverage:
+  `src-bun/__tests__/wire-contract.test.ts` snapshot now locks
+  `AgentFileEntry.loadStatus/loadMessage/loadWarnings`.
+- Renderer coverage:
+  `src/components/library/__tests__/LibraryAgentsTabSection.loading.test.ts`
+  asserts rejected rows show the SDK-rejected badge, message, and non-normal
+  **Fix** action; `src/lib/__tests__/sessionCommands.test.ts` covers
+  `/agent <name>` on a rejected file.
+- Post-review nits addressed: empty SDK `agent.list` plus no diagnostics now
+  leaves filesystem rows `unknown` (avoids load-window false positives), and
+  diagnostics prefer full path / filename matches before a guarded short-name
+  fallback so substring agent names do not steal each other's messages
+  (`src-bun/__tests__/sessionAgentsServiceListFiles.test.ts`).
+
+**Manual verification owed.**
+
+- See `MANUAL_TESTS.md` §81.1 for the live bad-agent authoring flow; it depends
+  on the real SDK discovery/reload event timing and file watcher behavior.
+
 ---
 
 ## 2026-05-30 — Merge train (7 fix PRs + #94) + dogfood reconciliation + #88 re-spec
@@ -36,12 +80,13 @@ pending past 180 ms still surface the loading affordance.
 **Takeaway.** Landed the reviewed dogfood-fix backlog as a sequential merge
 train — #84, #89, #90, #91, #92, #95, #97, then #94 — each rebased onto a
 fast-moving `main`, conflicts resolved, squash-merged via GitHub auto-merge.
-Two PRs (#97, #94) had real *code* conflicts with #95's `LibraryTabHeader`
+Two PRs (#97, #94) had real _code_ conflicts with #95's `LibraryTabHeader`
 refactor; the rest were additive doc conflicts. Re-spec'd #88 (composer Enter
 keybinding) from a hardcoded swap to a **settings feature** per user direction,
 and reconciled this session's dogfood results into `MANUAL_TESTS.md`.
 
 **Receipts / things future-me needs.**
+
 - **Merge-train mechanics.** Every fix PR prepends an `[Unreleased]` CHANGELOG
   block, a "Recently fixed" STATUS line, a new top DEVLOG H2, and sometimes a
   MANUAL_TESTS section — so each next rebase conflicts on those same regions.
@@ -62,8 +107,8 @@ and reconciled this session's dogfood results into `MANUAL_TESTS.md`.
 - **Prettier ≠ vue-tsc (re-burned).** #94's CI Lint job failed on a single
   `prettier/prettier` error in `sessions.ts:897` (multi-line signature reformat)
   that local `bun run lint` (vue-tsc only) never catches. `bunx prettier --write`
-  + `bunx eslint` fixed it; amend + force-push re-triggered auto-merge. Worktree
-  gates MUST run `bun run lint:eslint`, not just `bun run lint`.
+  - `bunx eslint` fixed it; amend + force-push re-triggered auto-merge. Worktree
+    gates MUST run `bun run lint:eslint`, not just `bun run lint`.
 - **#88 re-spec.** Issue body + title rewritten to a settings-based design
   (`composer.submitKeybinding: 'enter' | 'mod-enter'`, default `'enter'`). The
   blocking detail: in `'enter'` mode a plain-Enter handler at HIGH priority
@@ -85,6 +130,7 @@ selector and rebuilds its MergeView/inline view on theme flips because its
 language lifecycle already avoids post-mount reconfigure.
 
 **Receipts.**
+
 - Root cause from #76 confirmed: `src/components/shared/CodeEditor.vue` and
   `src/components/details/DiffEditor.vue` both had unconditional `oneDark`
   extensions.
@@ -98,6 +144,7 @@ language lifecycle already avoids post-mount reconfigure.
   CI required checks cover those.
 
 **Manual verification owed.**
+
 - See `MANUAL_TESTS.md` §76.1 for the live rendered-colour check; happy-dom does
   not resolve CodeMirror's real CSS cascade.
 
@@ -108,6 +155,7 @@ while delaying the PrimeVue loading/refresh affordance long enough that an
 instant Select no longer flashes.
 
 **Receipts.**
+
 - `LibraryAgentsTabSection.vue` now drives Button `loading` from a delayed
   visible-busy ref (`useTimeoutFn`, 180 ms) while `disabled` still reads the raw
   `agentBusyName`, so synchronous select/deselect resolves before any spinner
@@ -130,11 +178,12 @@ nothing to discard. Non-empty group closes still confirm, but the global
 lands on Cancel instead of the destructive action.
 
 **Receipts.**
+
 - `src/components/shell/GroupTab.vue` now centralizes close handling in
   `closeGroupOrConfirm`: `sessionCount === 0` calls `useGroupsActions.deleteGroup`
   immediately, while `count > 0` calls `confirm.require` with
   `acceptProps: { severity: 'danger' }`, `rejectProps: { severity: 'secondary',
-  text: true }`, and `defaultFocus: 'reject'`.
+text: true }`, and `defaultFocus: 'reject'`.
 - PrimeVue source check: `node_modules/primevue/confirmationoptions/index.d.ts`
   exposes `header`, `acceptProps`, `rejectProps`, and `defaultFocus`; ConfirmDialog
   consumes them in `node_modules/primevue/confirmdialog/index.mjs`.
@@ -153,6 +202,7 @@ navigation is idempotent: if Library is already open, the command focuses it
 instead of collapsing the right rail.
 
 **Receipts.**
+
 - `src/stores/shell/layoutStore.ts` adds `revealEdgePanel(id, edge)`, a
   programmatic show/focus helper that deliberately never collapses an already
   displayed edge panel. `activateEdgePanel` keeps its activity-tab toggle
@@ -179,6 +229,7 @@ handlers (`load`, `loadAll`, `openForm`, `openAddDialog`, `setAll`) while
 normalizing placement, labels, title tooltips, and accessible names.
 
 **Receipts.**
+
 - Shared component + type: `src/components/library/LibraryTabHeader.vue`,
   `src/components/library/libraryTabHeader.ts`.
 - Consumers: `LibraryAgentsTab.vue`, `LibrarySkillsTab.vue`,
@@ -206,9 +257,10 @@ the existing session-scoped `session.rpc.agent.reload()` flow before scanning
 disk, so a valid externally-dropped `.agent.md` can be selected immediately.
 
 **Receipts.**
+
 - Renderer: `LibraryAgentsTab.vue` keeps mount/session-switch `load()` list-only
   but binds the Refresh button to `refresh()` → `useAgentsLibrary.load(sessionId,
-  { reloadSdk: true })`, avoiding extra SDK reloads on watch ticks and preserving
+{ reloadSdk: true })`, avoiding extra SDK reloads on watch ticks and preserving
   the no-session global list-only path.
 - Backend: `SessionRegistry.listAgentFiles(sessionId, { reloadSdk })` delegates
   to `SessionAgentsService.listFiles`; when requested, it reuses
@@ -235,6 +287,7 @@ Codified the whole loop into a new project skill so the next agent doesn't
 re-derive it.
 
 **Issues filed (#76–#82).**
+
 - #76 `bug(chat)` — fenced code blocks render dark in light mode. Root cause:
   `MessageContent.vue:71` routes top-level fenced blocks through the CodeMirror
   `CodeEditor`, which hardcodes `oneDark` (`CodeEditor.vue:20,94`) regardless of
@@ -262,7 +315,7 @@ Verified in SDK source (`node_modules/@github/copilot/app.js`): agent schema
 `sht` → `U2` does `schema.safeParse(n)`; on failure the agent is **silently
 dropped**. `tMs` (http MCP) = `{ url, headers?, timeout?, tools (required),
 type:["http","sse"] }`; unknown keys are stripped+warned, not fatal. Adding
-`tools: []` fixed selectability. dafman's own *form-created* agent (`tester`)
+`tools: []` fixed selectability. dafman's own _form-created_ agent (`tester`)
 always worked. The invalid fixture, chased correctly, is what surfaced #81+#82.
 (Stored a memory on the `.agent.md` safeParse behavior.)
 
@@ -276,9 +329,10 @@ clean up throwaway fixtures. Includes the dev-log path, restart recipe, and the
 
 **Process note.** `MANUAL_TESTS.md` result lines for the 17 walked items are now
 filled (`- [x] result: v PASS …` / failures cross-referenced to issues). Agents
-+ Visual sub-sections are effectively done bar the two code-block/refresh issues;
-remaining queue: MCP (9.1/10.1/51.3/7.x), Jobs (16.x/D15.1), Library auto-refresh
-(51.1/51.2/51.4), instruction theming (19.1/19.2).
+
+- Visual sub-sections are effectively done bar the two code-block/refresh issues;
+  remaining queue: MCP (9.1/10.1/51.3/7.x), Jobs (16.x/D15.1), Library auto-refresh
+  (51.1/51.2/51.4), instruction theming (19.1/19.2).
 
 ## 2026-05-30 — #9 MCP discovery: part-1 repro fixture + parts 2/3 filed upstream (copilot-sdk#1518)
 
@@ -288,8 +342,8 @@ removed `.vscode/mcp.json` support; discovery now only reads `.mcp.json` /
 persistence) is dogfoddable via a new fixture; parts 2/3 (edit/override + source
 path) are SDK-blocked and now tracked upstream.
 
-**`.vscode/mcp.json` is dead.** Bundled SDK string: *"Copilot CLI's incomplete
-support for .vscode/mcp.json has been removed … migrate to .mcp.json"*. A
+**`.vscode/mcp.json` is dead.** Bundled SDK string: _"Copilot CLI's incomplete
+support for .vscode/mcp.json has been removed … migrate to .mcp.json"_. A
 `.vscode`-based repro shows **zero** discovered servers — would have silently
 misled the dogfood. Fixture deliberately uses `.mcp.json`
 (`{ "mcpServers": { "<name>": {…} } }`, key confirmed `api.schema.json:5452`).
@@ -303,16 +357,17 @@ persistence). Toggle routes through SDK's persisted disabled list
 
 **Parts 2/3 SDK gap — receipts.** Discovery shapes carry identity+status only, no
 launch config / origin path:
+
 - `DiscoveredMcpServer` (`rpc.d.ts` ~2657) = `{ name, type?, source, enabled }`
 - `McpServer` (`rpc.d.ts` ~4148) = `{ name, status, source?, error }`
 - `McpServerSource` enum = `user|workspace|plugin|builtin` (coarse, no path)
-No command/args/url/env/headers or origin file path → can't render a source-file
-detail view or edit/override a discovered workspace/plugin server. Filed
-**github/copilot-sdk#1518** asking discovery to return resolved config + source
-path.
+  No command/args/url/env/headers or origin file path → can't render a source-file
+  detail view or edit/override a discovered workspace/plugin server. Filed
+  **github/copilot-sdk#1518** asking discovery to return resolved config + source
+  path.
 
 **Which SDK.** Our runtime imports **`@github/copilot-sdk`** (standalone
-multi-platform, repo `github/copilot-sdk`), *not* the bundled `@github/copilot`
+multi-platform, repo `github/copilot-sdk`), _not_ the bundled `@github/copilot`
 CLI — both share identical MCP shapes, so the upstream ask went to
 `github/copilot-sdk`. #9 left **open + `blocked`** on copilot-sdk#1518 for parts
 2/3; commented with all of the above.
@@ -340,7 +395,7 @@ why the bug was subtle and "only at certain widths".
 
 **Mechanism.** `.lex-toolbar-left/center/right` each had `min-width: 0`. That
 overrides the flex default (`min-width: auto` = min-content) and lets the flex
-algorithm shrink a group's box *below its content*. The group's content
+algorithm shrink a group's box _below its content_. The group's content
 (e.g. the 3-icon mode SelectButton, which is itself `flex: 0 0 auto`) can't
 shrink, so it overflowed the shrunken box. The toolbar had no `flex-wrap`, and
 `overflow-x: hidden` only clips at the toolbar's own edge — so the overflow
@@ -348,6 +403,7 @@ painted over the adjacent group (center has `z-index: 1`, left did not, so
 center won the stack). Classic flexbox overlap.
 
 **Fix** (`src/components/chat/MessageComposer.vue` styles):
+
 - Removed `min-width: 0` from the three groups → a group is never sized below
   its (already-collapsed) content, so it can't spill into a neighbour.
 - Added `flex-wrap: wrap` + `row-gap: 0.3rem` to `.lex-composer-toolbar` → when
@@ -415,7 +471,7 @@ investigation, ~90% already implemented. The Sign-in button (#8) →
 `useMcpLibrary.signIn` → `loginToMcpServer` IPC → `sessionMcpService.loginToServer`
 → `session.rpc.mcp.oauth.login({serverName})` chain already returns an
 `authorizationUrl`, which `signIn` opens via `openUrl` (system browser). The SDK
-runtime starts the loopback callback listener *before* returning, completes the
+runtime starts the loopback callback listener _before_ returning, completes the
 token exchange in the background, persists the token, and reconnects (signalled
 via `session.mcp_server_status_changed`). So the "popup flow" already exists.
 
@@ -427,6 +483,7 @@ build an in-app popup window. Recorded here so a future agent doesn't "fix" #7 b
 adding an embedded webview.
 
 **The two real gaps (both closed):**
+
 1. **`clientName` never passed.** `McpOauthLoginRequest.clientName` (rpc.d.ts:3521)
    is the consent-screen display name; the SDK doc explicitly says "callers driving
    interactive auth should pass their own surface-specific label." It was already
@@ -434,7 +491,7 @@ adding an embedded webview.
    sessionMcpService) — the renderer's `signIn` just never sent it, so the consent
    screen showed the SDK's neutral fallback. Now `signIn` passes `PRODUCT_NAME`
    (new `src/lib/product.ts` = `'Dafman'`), which the SDK applies to
-   *newly-registered* dynamic clients only; existing registrations keep their old
+   _newly-registered_ dynamic clients only; existing registrations keep their old
    name (noted in MANUAL_TESTS §7.2).
 2. **`signIn` used `sessions[0]`, not the active session.** Rubber-duck catch. The
    OAuth flow runs through a live session; `loadAll()` already prefers
@@ -443,12 +500,13 @@ adding an embedded webview.
    authenticate through the session whose workspace the Library reflects.
 
 **Deliberately out of scope:**
+
 - **`callbackSuccessMessage`** (loopback success-page copy): SDK-recommended but
   pure polish, and it would need a new optional field plumbed through 4 backend
   layers + a wire-contract snapshot. Rubber-duck agreed this over-scopes a bug
   fix. Left for an optional follow-up.
 - **`registerInterest('mcp.oauth_required')`** (rpc.d.ts:5659): gates the
-  *agent-driven* OAuth path (a mid-session tool call needing auth) — when no
+  _agent-driven_ OAuth path (a mid-session tool call needing auth) — when no
   consumer registers interest, the runtime uses a "browserless fallback that
   silently reuses cached tokens." This does **not** affect the user-initiated
   Library Sign-in (which calls `mcp.oauth.login` directly). But it likely means
@@ -470,10 +528,11 @@ object `{ name, className, ... }`), NOT a CSS class on a wrapper. With no prop i
 falls back to `themeAbyss` (dark) and writes `--dv-*` vars onto its OWN root
 element. Our `style.css` `--dv-*` → `--p-*` bridge keys off `.dockview-theme-light`
 on the `.dock-wrapper` ancestor — but dockview's own root (where abyss put the
-dark vars) is a *closer* ancestor, so abyss-dark always won, in both modes. Light
+dark vars) is a _closer_ ancestor, so abyss-dark always won, in both modes. Light
 mode was the visible victim (chat cards light, all dock chrome black).
 
 **Receipts:**
+
 - `node_modules/dockview-core/dist/esm/dockview/dockviewComponent.js`:
   `const theme = this._options.theme ?? themeAbyss`.
 - `node_modules/dockview-core/dist/esm/dockview/theme.js:1-8`: `themeDark` →
@@ -484,6 +543,7 @@ mode was the visible victim (chat cards light, all dock chrome black).
   `--dv-group-view-background-color=#000c18`. AFTER the fix: `#ffffff`.
 
 **Fix (single root cause, not 7 surface patches — AGENTS rule 0):**
+
 - New `src/composables/useDockviewTheme.ts`: `resolveIsDark(theme, usePreferredDark)`
   → `isDark`; `dockviewTheme = isDark ? themeDark : themeLight`. Shared by both
   hosts. Replaced App.vue's hand-rolled `matchMedia` block with VueUse
@@ -517,14 +577,13 @@ chrome has no geometry in happy-dom, so it can't be asserted in unit tests).
 
 ## 2026-05-30 — #54 rail cog one-click-to-close
 
-
 **Takeaway.** The session-details / Library rail cog needed two clicks to
 collapse after you touched anything inside the rail. Root cause: the edge-panel
 toggle keyed off `panel.api.isActive`, which is only true when the panel's group
-is *also* dockview's globally-active group. Clicking a control inside the rail
+is _also_ dockview's globally-active group. Clicking a control inside the rail
 moves global focus off that group, so `isActive` flips false while the rail is
 still visibly open → the first cog click takes the "open it" (re-activate)
-branch instead of collapsing. Fixed by keying off the group's *displayed* panel
+branch instead of collapsing. Fixed by keying off the group's _displayed_ panel
 instead.
 
 **The fix.** `activateEdgePanel` (`src/stores/shell/layoutStore.ts:894`) now
@@ -532,11 +591,11 @@ computes `isShown = !isCollapsed && panel.group.activePanel?.id === id`. dafman'
 dockview-core is a fork; `IDockviewPanel.group` is a `DockviewGroupPanel` whose
 `.activePanel` tracks the currently-displayed panel **independent of global
 focus** — exactly the signal we want. `panel.api.isActive` / `setActive` is still
-used for the *activate* path (switching which panel a multi-panel edge shows).
+used for the _activate_ path (switching which panel a multi-panel edge shows).
 
 **Multi-panel edge preserved.** The right edge group holds both `sessionDetails`
 and `library`. Clicking the Library tab while session-details is displayed must
-*switch*, not collapse. The `activePanel?.id === id` check handles this: only the
+_switch_, not collapse. The `activePanel?.id === id` check handles this: only the
 displayed panel collapses; a non-displayed sibling tab activates.
 
 **Test-first.** Extended the bespoke fake DockviewApi in
@@ -546,7 +605,6 @@ repro (open rail → flip panel `isActive=false` while keeping it displayed →
 assert single `activateEdgePanel` collapses) **failed before the fix, passes
 after**. Added a sibling-switch guard test. Full gate green: vue-tsc 0,
 eslint 0 errors, 705 tests, smoke 4/4.
-
 
 **Takeaway.** Both agent-instruction files had grown verbose and overlapping.
 Compressed without dropping any actionable directive (rubber-duck-verified):
@@ -569,8 +627,6 @@ lost teeth"; restored three minor items it flagged (`bun run inspect` `--url`/
 `5173` option, the archive-fact-promotion instruction, a one-line E2E coverage
 pointer). Docs-only change → direct-push to main.
 
-
-
 **Takeaway.** The Library Instructions content box rendered with a
 non-inverting background in both themes. Root cause: `.instruction-content`
 used `background: var(--p-surface-100)`. PrimeVue's **numeric** surface scale
@@ -581,6 +637,7 @@ masked the symptom with four hand-rolled `:global(.app-dark)` override blocks
 (a rule-0 workaround smell), which is why it "sort of" worked but looked wrong.
 
 **Fix** (`src/components/library/LibraryInstructionsTab.vue`):
+
 - Background → `color-mix(in srgb, var(--p-text-color) 4%, var(--p-content-background))`
   — the identical construction `.lex-code` (lexical.css:88, at 8%) already uses
   and which renders correctly in dark mode app-wide, so the inversion is proven
@@ -596,8 +653,6 @@ boots clean), real `bun run dev` boot — log clean, no runtime errors. Computed
 color inversion has no geometry in happy-dom, so the visual check is a new
 `MANUAL_TESTS.md` §19 entry (light/dark expand of an instruction file) rather
 than a unit assertion.
-
-
 
 **Takeaway.** #23 ("Library Agents tab does not show project agents") is already
 fixed; closed as verified rather than re-implemented. The full resolution chain
@@ -628,7 +683,7 @@ and asserts no project agents when the session has no working directory.
 ## 2026-05-30 — fix #17: composer mode selector compact (narrow-pane) form restored
 
 **Takeaway:** the "bottom bar resize regression" and "small-mode selector
-missing" in #17 are the *same* bug. Commit `6343902` (problems.md sweep)
+missing" in #17 are the _same_ bug. Commit `6343902` (problems.md sweep)
 removed the `@container (max-width: 620px)` rule that hid `.mode-button-group`
 on narrow panes — its accompanying swap target `.mode-select-shell` never
 existed in the codebase, so rather than build the fallback, the agent deleted
@@ -637,6 +692,7 @@ without the swap"). The user disagreed: at narrow widths the segmented control
 crowds the toolbar and the bottom bar reflow looks broken.
 
 **Fix:** `src/components/chat/ModeButtonGroup.vue` now renders both forms:
+
 - the existing `SelectButton` (3-icon segmented control), class `.mode-button-group`
 - a new icon-only PrimeVue `Select`, class `.mode-select-compact`, whose `#value`
   slot shows just the active mode's icon (colored per mode via `--mode-color`)
@@ -651,6 +707,7 @@ the nearest containment ancestor regardless of which component's stylesheet the
 rule lives in, so a child component's scoped `@container` works fine.
 
 **Receipts:**
+
 - Culprit: `git show 6343902` (MessageComposer.vue toolbar bullet).
 - Issue source rows: `plans/TODO_archive.md:76` (Shell & layout row 7),
   `MANUAL_TESTS_archive.md:332-337` (the original spec: "Narrow panes switch
@@ -685,7 +742,7 @@ hidden for exactly the servers that need it. Fix: show Sign-in for any
 that hides it when there is no active session also hides it when there IS one."
 The visible `v-if` no longer referenced session state (it was
 `entry.transport === 'http' && entry.hasOauth` after the Phase B2 composable
-extraction, `511114b`). The *symptom* (button missing on configured HTTP
+extraction, `511114b`). The _symptom_ (button missing on configured HTTP
 servers) persisted for a different reason — the `hasOauth` gate — so I
 reproduced the real failure (rule 15) before touching code rather than chasing
 the stale framing.
@@ -700,6 +757,7 @@ button. The SDK's `mcp.oauth.login` is the real source of truth for whether
 OAuth is needed; a static-config sniff can't be.
 
 **Receipts.**
+
 - `src/composables/library/useMcpLibrary.ts` — `classifyTransport` now returns
   `'local' | 'http'` (was `{ transport, hasOauth }`); `hasOauth` removed from
   `ConfiguredEntry`. Doc comment explains why static OAuth detection is wrong.
@@ -737,19 +795,20 @@ next `loadAll`. Tests: `src/composables/library/__tests__/useMcpLibrary.test.ts`
 
 **#9 investigation — why it's SDK-blocked (receipts in
 `node_modules/@github/copilot/copilot-sdk/generated/rpc.d.ts`):**
+
 1. **Persistence is already wired correctly.** The discovered toggle →
    `setEnabled` → `enableMcpServers`/`disableMcpServers` →
    `client.rpc.mcp.config.enable/disable`. SDK doc (rpc.d.ts:3367) for
-   `McpConfigDisableRequest.names`: *"Each server is added to the **persisted**
-   disabled list so new sessions skip it."* So our code path persists by
+   `McpConfigDisableRequest.names`: _"Each server is added to the **persisted**
+   disabled list so new sessions skip it."_ So our code path persists by
    construction. The original "doesn't persist" repro can't be reproduced
    statically — needs a live app restart dogfood. Likely already fixed by the
    config-level routing, or a subtler runtime repro.
 2. **Source file path is not available.** `McpServerSource` is a fixed enum
-   (`user|workspace|plugin|builtin`, session-events.d.ts:304) — a *category*,
+   (`user|workspace|plugin|builtin`, session-events.d.ts:304) — a _category_,
    not a path. We already surface the category. A literal path would be a guess.
 3. **Edit/Delete on discovered rows is semantically blocked.** `config.remove`
-   / `config.update` only touch *user* configuration; a workspace/plugin/builtin
+   / `config.update` only touch _user_ configuration; a workspace/plugin/builtin
    server is defined in someone else's file and can't be deleted or edited by
    us. Only `disable` (toggle off) is offered, which is correct.
 
@@ -759,7 +818,7 @@ dogfood-first for #9; #10 ships alone on `sprint-b/10-mcp-remove-view-jump`.
 ## 2026-05-30 — #16 Jobs "Go to session" reveals the spawning tool call
 
 **Takeaway:** A `setTimeout`-gated bus emit for cross-panel navigation is a
-lost-intent race. When the destination component mounts *after* the navigation
+lost-intent race. When the destination component mounts _after_ the navigation
 is requested (freshly-opened dockview panel), a transient mitt emit is dropped
 because mitt has no replay. The durable fix is to park the navigation intent in
 a store and let the destination consume it on mount **and** via a watch — that
@@ -771,11 +830,12 @@ session's panel then did `setTimeout(() => busEmit('scroll-to-bottom', …), 100
 Two bugs: (1) on a freshly-opened panel the 100 ms emit raced the async
 ChatWindow mount — `busOn('scroll-to-bottom')` registers in `onMounted`, so an
 emit before that is silently dropped (mitt, no replay — see `src/lib/bus.ts`).
-(2) Even when it landed, scrolling to the *bottom* is wrong: the user clicked a
-specific job and expects to see the *message that spawned it*, not the latest
+(2) Even when it landed, scrolling to the _bottom_ is wrong: the user clicked a
+specific job and expects to see the _message that spawned it_, not the latest
 work.
 
 **Fix (renderer-only):**
+
 - `layoutStore`: added `pendingReveal` ref + `requestReveal(sessionId, target)`
   (REPLACE the entry, never merge — a stale `toolCallId` must not survive a
   later bottom-scroll request) + `consumeReveal(sessionId)` (read+delete).
@@ -786,10 +846,10 @@ work.
 - `ChatWindow.vue`: added `:data-tool-call-id` to the tool `.message-shell`
   wrapper; `revealTarget(target)` does nextTick + double-rAF, queries
   `[data-tool-call-id="${CSS.escape(id)}"]`, `scrollIntoView({block:'center'})`
-  + a 1.6 s highlight flash; **retries across 8 frames before falling back to
-  the bottom** so a not-yet-rendered transcript node doesn't drop the intent.
-  Consumes the intent in `onMounted` (fresh panel) and a non-immediate, falsy-
-  guarded `watch` on `pendingReveal[sessionId]` (already-open panel).
+  - a 1.6 s highlight flash; **retries across 8 frames before falling back to
+    the bottom** so a not-yet-rendered transcript node doesn't drop the intent.
+    Consumes the intent in `onMounted` (fresh panel) and a non-immediate, falsy-
+    guarded `watch` on `pendingReveal[sessionId]` (already-open panel).
 
 **Rubber-duck (duck-16):** confirmed store-over-bus, flagged four tightenings I
 adopted: (1) don't consume a toolCallId reveal before the DOM node exists →
@@ -875,7 +935,7 @@ session-wide toggle stays — it's not redundant.
 `modeBySession` is read by `sessionConfigBuilder` to short-circuit
 `onPermissionRequest` / `onUserInputRequest` / `onElicitationRequest` when
 the session is in `autopilot` (return `user-not-available` / auto-decline).
-That gating is a *session* property, not a per-turn one — per-message
+That gating is a _session_ property, not a per-turn one — per-message
 `agentMode` only sets the SDK's per-turn UI mode and never reaches our
 permission handlers. Dropping the toggle would break autopilot gating.
 
@@ -900,13 +960,14 @@ chronically flaking on CI's `hmr` variant (1041–1125ms) — scoped it to `prod
 **resume() refactor (`src-bun/app/chat/sessions.ts`).** Extracted two
 self-contained concerns, each with its own try/catch, dropping `resume()` below
 the CC-15 gate:
+
 - `readPersistedMeta(sessionId)` — the pre-resume `getSessionMetadata` read for
   persisted cwd + title. Non-fatal (`{}` on throw), same as the old inline
   swallow.
 - `hydrateHistory(session, actualId, effectiveCwd)` — the S5 cap + #20 synthetic
   terminator + chunked `replayHistory` + the `session resumed` log. Non-fatal.
-Behavior-preserving: the 47 `sessions.test.ts` cases (cwd-pinning, title emit,
-#20 mid-turn terminator, idempotent re-resume) all still pass untouched.
+  Behavior-preserving: the 47 `sessions.test.ts` cases (cwd-pinning, title emit,
+  #20 mid-turn terminator, idempotent re-resume) all still pass untouched.
 
 **Smoke boot gate (`e2e/smoke.pwtest.ts`).** The gate now asserts only on the
 `prod` project (rollup IIFE bundle — what actually ships, and the only
@@ -916,8 +977,6 @@ perf-representative path), and log-only on `hmr`. The `hmr` project boots
 dep-optimizer chunk-order bugs (per the playwright.config.ts comment), not to
 measure boot perf. Threshold value unchanged (1000ms) — only its scope. The
 log line now carries the variant name so trends stay visible for both.
-
-
 
 **Takeaway.** The stuck-spinner-on-resume bug was exactly the user's
 hypothesis: kill the app while the agent is mid-turn → the persisted
@@ -970,7 +1029,7 @@ fire `turn_start` then `dafman.resume_settled` → `isThinking` false.
 **Manual test (not automated).** Steps: start a session, send a prompt,
 and **hard-kill the app** (Task Manager / `kill -9`) while the spinner is
 active; relaunch and re-open that session. Expected: the spinner clears on
-resume instead of hanging forever. *Why not automated:* the E2E harness's
+resume instead of hanging forever. _Why not automated:_ the E2E harness's
 `restart()` does a clean shutdown that emits a proper turn boundary —
 reproducing the dangling `turn_start` needs an abrupt process kill
 mid-turn, which the harness can't drive. The unit tests cover the exact
@@ -1016,7 +1075,7 @@ replays — single instance short-circuits on `entries.has(sessionId)`).
   to its "Open session details" label (driven by `layoutStore.detailsOpen`).
 - **The cog needs two clicks to close after you interact with a control inside
   the rail.** `activateEdgePanel` (`layoutStore.ts:863`) collapses only when
-  `panel.api.isActive && !isCollapsed`. After clicking a button *inside* the
+  `panel.api.isActive && !isCollapsed`. After clicking a button _inside_ the
   rail, the rail is no longer dockview's active panel, so the first cog click
   takes the `!isActive` branch (re-activates) and a second click collapses.
   Confirmed with a throwaway probe. This is a real, minor UX quirk (likely
@@ -1025,9 +1084,9 @@ replays — single instance short-circuits on `entries.has(sessionId)`).
 - **Rail inner width is group-min minus ~35px chrome.** The right edge group
   honors a 380px floor (`panels.ts` SessionDetails.minimumSize), but the inner
   `.session-details` content renders at ~345px (the vertical activity-tab strip
-  + borders eat the rest). The old auto-open path sized the inner element
-  directly; the edge-tab refactor means inner = group − strip. Flow 14's width
-  assertion lowered 380 → 340 to match (mirrors the Library check's 320 < 360).
+  - borders eat the rest). The old auto-open path sized the inner element
+    directly; the edge-tab refactor means inner = group − strip. Flow 14's width
+    assertion lowered 380 → 340 to match (mirrors the Library check's 320 < 360).
 - **Second session in tests:** via the Sessions activity panel's "New session"
   button (`SessionsManager.vue:466`), not a nonexistent topbar button or
   Ctrl+N. Flow 20 updated accordingly.
@@ -1036,7 +1095,6 @@ replays — single instance short-circuits on `entries.has(sessionId)`).
 `.github/branch-protection.json` required checks (it was dropped during the
 #29 mitigation). Verified: `bun run lint`, `lint:tsc-bun`,
 `fakeClientResume.test.ts`, and full `bun run e2e:run` (48/48) all green.
-
 
 **Takeaway:** Added `watch(activeSessionId, () => void load())` to
 the three session-scoped Library tabs (Agents / Skills / MCP); Tools
@@ -1076,8 +1134,8 @@ if (activeId && groupsStore.isGroupPanelId(activeId)) {
 When the user clicks a different outer-dock group tab,
 `recomputeActiveSession` resolves through
 `groupsStore.innerApis[activeGroupId]` — but `activeGroupId` is still
-the previous group's id. So it reads the *previous* group's inner
-dockview, finds *that group's* last active chat panel, and either
+the previous group's id. So it reads the _previous_ group's inner
+dockview, finds _that group's_ last active chat panel, and either
 reaffirms the stale session id or returns the same one. Net effect:
 `activeSessionId` doesn't change on between-group switches → no
 Library watcher fires.
@@ -1126,25 +1184,25 @@ breaking-change surface. All probes green.
 - `package.json` — `vite: "^8.0.0"` (was `6.4.2`),
   `@vitejs/plugin-vue: "^6.0.0"` (was `5.2.4`).
 - `vite.config.ts` — unchanged. Single `vue()` plugin + `@/*` alias
-  + port + outDir. None of the Vite 8 breaking-change surfaces apply.
+  - port + outDir. None of the Vite 8 breaking-change surfaces apply.
 
 ### Pre-flight research (per rules 0 + 24)
 
 Read the official Vite migration guide (`vite.dev/guide/migration`).
 Vite 8 breaking changes that affect us:
 
-| Change | Our exposure |
-|---|---|
-| Rolldown replaces esbuild + Rollup | We don't use either's API directly |
-| `optimizeDeps.esbuildOptions` deprecated | Not used |
-| `esbuild.*` options deprecated → `oxc.*` | Not used |
-| `build.rollupOptions` → `build.rolldownOptions` | Not used |
-| `build.rollupOptions.output.manualChunks` removed (object form) | Not used |
-| `import.meta.url` no longer polyfilled in UMD/IIFE | We build ESM |
-| CJS interop heuristic change | Could affect deps; tested via smoke + e2e — clean |
-| `browser`/`module` field auto-pick removed | Could affect deps; tested via smoke — clean |
-| Default browser target Chrome 107 → 111 (etc.) | We target evergreen webview, fine |
-| `build.rollupOptions.watch.chokidar` removed | Not used |
+| Change                                                          | Our exposure                                      |
+| --------------------------------------------------------------- | ------------------------------------------------- |
+| Rolldown replaces esbuild + Rollup                              | We don't use either's API directly                |
+| `optimizeDeps.esbuildOptions` deprecated                        | Not used                                          |
+| `esbuild.*` options deprecated → `oxc.*`                        | Not used                                          |
+| `build.rollupOptions` → `build.rolldownOptions`                 | Not used                                          |
+| `build.rollupOptions.output.manualChunks` removed (object form) | Not used                                          |
+| `import.meta.url` no longer polyfilled in UMD/IIFE              | We build ESM                                      |
+| CJS interop heuristic change                                    | Could affect deps; tested via smoke + e2e — clean |
+| `browser`/`module` field auto-pick removed                      | Could affect deps; tested via smoke — clean       |
+| Default browser target Chrome 107 → 111 (etc.)                  | We target evergreen webview, fine                 |
+| `build.rollupOptions.watch.chokidar` removed                    | Not used                                          |
 
 Also checked Electrobun's vite compatibility: it has no vite
 peer-dep. `electrobun.config.ts` declares `copy: { "dist/index.html"
@@ -1194,13 +1252,12 @@ Rolldown's stricter dead-code analysis surfaced:
 ### Closes #44
 
 This is the third and final fork of the dep-majors umbrella.
+
 - Part 1: vue-tsc 2.2.12 → 3.3.2 + useTemplateRef (#45, `dab45f8`)
 - Part 2: typescript 5.9.3 → 6.0.x (#47, `e516b27`)
 - Part 3: vite 6.4.2 → 8.0.x + plugin-vue 5.2.4 → 6.0.x (this PR)
 
 ---
-
-
 
 **Takeaway:** Second fork of #44 dep-majors umbrella. Bumped
 typescript 5.9.3 → 6.0.x. Two tsconfig migrations, zero source
@@ -1222,18 +1279,18 @@ explicit `types`) were already set or not relevant to us.
 Read the official announcement (`devblogs.microsoft.com/typescript/announcing-typescript-6-0/`).
 Relevant breaking changes and our status:
 
-| Change | Default | Our status |
-|---|---|---|
-| `baseUrl` deprecated | removed if not set | dropped explicitly |
-| `strict` defaults to `true` | was `false` | already `true` |
-| `module` defaults to `esnext` | was `commonjs` | explicit `ESNext` |
-| `target` defaults to current-year ES | was `es3` | explicit `ES2020` |
-| `noUncheckedSideEffectImports: true` | was `false` | clean — no side-effect-import typos |
-| `libReplacement: false` | was `true` | perf-only, no behavior change |
-| `rootDir` defaults to tsconfig dir | was inferred | already implicit |
-| `types` defaults to `[]` | was "all @types/*" | added `["bun"]` explicitly |
-| `target: es5` deprecated | — | we use `ES2020`/`ES2022` |
-| Import assertion (`import ... assert {...}`) deprecated | — | no usage |
+| Change                                                  | Default             | Our status                          |
+| ------------------------------------------------------- | ------------------- | ----------------------------------- |
+| `baseUrl` deprecated                                    | removed if not set  | dropped explicitly                  |
+| `strict` defaults to `true`                             | was `false`         | already `true`                      |
+| `module` defaults to `esnext`                           | was `commonjs`      | explicit `ESNext`                   |
+| `target` defaults to current-year ES                    | was `es3`           | explicit `ES2020`                   |
+| `noUncheckedSideEffectImports: true`                    | was `false`         | clean — no side-effect-import typos |
+| `libReplacement: false`                                 | was `true`          | perf-only, no behavior change       |
+| `rootDir` defaults to tsconfig dir                      | was inferred        | already implicit                    |
+| `types` defaults to `[]`                                | was "all @types/\*" | added `["bun"]` explicitly          |
+| `target: es5` deprecated                                | —                   | we use `ES2020`/`ES2022`            |
+| Import assertion (`import ... assert {...}`) deprecated | —                   | no usage                            |
 
 ### Verification
 
@@ -1250,8 +1307,6 @@ Relevant breaking changes and our status:
   verification needed). That's the next session's work, not this PR.
 
 ---
-
-
 
 **Takeaway:** First fork of the dep-majors umbrella (#44). Bumped
 vue-tsc 2.2.12 → 3.3.2. vue-tsc 3 stops auto-linking template
@@ -1278,6 +1333,7 @@ follow-up.
 
 vue-tsc 3's stricter check is **right**. The previous pattern
 hid the template-ref binding inside a composable, which meant:
+
 - The compiler couldn't link the template's `ref="toolbarRef"` string
   to the composable's `const toolbarRef = ref(null)`.
 - vue-tsc 3 flagged the destructured local as unused.
@@ -1293,7 +1349,7 @@ AND to anyone reading the component.
 
 - `bun run check` green — vue-tsc 3 + lint:bun + lint:tsc-bun +
   lint:eslint (18 warnings carried) + 679 tests + electrobun build
-  + Playwright smoke + jobs-spinner probe.
+  - Playwright smoke + jobs-spinner probe.
 - Tried adding a composer-toolbar Playwright probe but deleted it —
   default chromium width (1280) doesn't trigger the responsive
   breakpoint, so it would only verify "page boots" which smoke
@@ -1364,8 +1420,6 @@ gotten it wrong. (We did not.)
 
 ---
 
-
-
 **Takeaway:** Fixed the Jobs panel active-job spinner so PrimeIcons rotates from a square, centered icon box instead of orbiting around an off-center glyph box.
 
 ### Receipts
@@ -1389,9 +1443,10 @@ No unit test was added: the regression is a visual CSS animation pivot in the br
 ## 2026-05-28 (much later) — GitHub migration shipped
 
 **Takeaway:** Moved work tracking from `plans/TODO.md` to GitHub Issues
-+ Projects board (when scope is available) + automated CI gates +
-labeler + stale + dependabot + automerge + CodeQL. Took most of a
-session; 22 issues filed.
+
+- Projects board (when scope is available) + automated CI gates +
+  labeler + stale + dependabot + automerge + CodeQL. Took most of a
+  session; 22 issues filed.
 
 ### What landed
 
@@ -1429,7 +1484,7 @@ session; 22 issues filed.
 - **Phase 5 — Doc reshuffle.**
   - `plans/TODO.md` → `plans/TODO_archive.md` with frozen banner.
   - `MANUAL_TESTS.md` failing section replaced with `gh issue list
-    --label manual-test-fail` pointer; pending-verification section
+--label manual-test-fail` pointer; pending-verification section
     kept (it's the dogfood-gate replacement for the Pending column).
   - `STATUS.md` top-of-stack now links the milestones.
   - `AGENTS.md` cross-references updated everywhere `plans/TODO.md`
@@ -1446,10 +1501,10 @@ session; 22 issues filed.
 ### Gotchas / debt fixed mid-flight
 
 - **Lockfile drift.** Earlier `bun add yaml` for template validation
-  + `bun remove yaml` left `yaml@2.9.0` as a top-level entry in
-  `bun.lock` despite removing the dep. Local install with warm cache
-  accepted it; CI `--frozen-lockfile` rejected it. Fixed with
-  `rm -rf node_modules bun.lock && bun install`.
+  - `bun remove yaml` left `yaml@2.9.0` as a top-level entry in
+    `bun.lock` despite removing the dep. Local install with warm cache
+    accepted it; CI `--frozen-lockfile` rejected it. Fixed with
+    `rm -rf node_modules bun.lock && bun install`.
 - **CI lint job mismatch.** Old `ci.yml#check` only ran `bun run lint`
   (vue-tsc), missing `lint:bun`, `lint:tsc-bun`, and `lint:eslint`.
   Refactor aligns CI lint with the local `bun run check` so the
@@ -1491,13 +1546,12 @@ TBD (P5/P6 doc reshuffle + e2e webServer fix)
 
 ---
 
-
-
 **Takeaway:** Extracted `<LibraryAgentsTabSection>` to kill the 77-line
 intra-file dup Sprint A1+A2 introduced. Also added `.gitattributes` to
 stop the CRLF/LF dance.
 
 **Phase E.8:**
+
 - New `src/components/library/LibraryAgentsTabSection.vue` (105 lines):
   pure template + `defineProps` + 3 emit signatures
   (`select`/`reveal` → string, `deselect` → void, `edit`/`delete` →
@@ -1508,12 +1562,13 @@ stop the CRLF/LF dance.
 - Tests: **679 pass**.
 
 **.gitattributes:**
+
 - Repo had `core.autocrlf=true` (local) and NO `.gitattributes`. That
   means checkouts convert blobs (LF) → working tree (CRLF), and
   prettier (`endOfLine: "lf"`) then complains on any new file. Hidden
   trap for every new contributor on Windows.
 - Added `* text=auto eol=lf` + explicit binary list. `git add
-  --renormalize .` was a no-op on existing files (autocrlf=true was
+--renormalize .` was a no-op on existing files (autocrlf=true was
   already storing LF blobs); the practical effect is **new files will
   be LF on disk going forward**, no more "delete `␍`" prettier errors.
 - This is closely related to the silent-eslint-break in F.4: a check we
@@ -1523,8 +1578,6 @@ stop the CRLF/LF dance.
   classes now fixed.
 
 ---
-
-
 
 **Takeaway:** ESLint had been silently broken since the typescript-eslint
 8.59 → 8.60 bump (commit `9b9cf11`, 2026-05-26). Root cause was a
@@ -1536,6 +1589,7 @@ config validator's plugin-identity check rejected the second
 registration as `Cannot redefine plugin "@typescript-eslint"`.
 
 Fix:
+
 1. Added `"typescript-eslint": "^8.60.0"` to `package.json#overrides`.
 2. `rm -rf node_modules/gts/node_modules/typescript-eslint && bun install --force`.
 3. Ran `eslint --fix` — cleaned **3,054 prettier auto-fixable errors**
@@ -1544,6 +1598,7 @@ Fix:
 4. Wired `lint:eslint` into `bun run check` (was previously orphaned).
 
 **Receipts:**
+
 - `bun run lint:eslint` exit code 0; 0 errors, 18 warnings.
 - Warning breakdown: 6 `complexity`, 3 `no-dynamic-delete`,
   3 `no-redundant-type-constituents`, 2 `max-depth`,
@@ -1553,6 +1608,7 @@ Fix:
 - `bun run lint` (vue-tsc), `lint:bun`, `lint:tsc-bun` all clean.
 
 **Findings vs the stale 2026-05-25 §2 table:**
+
 - Complexity hotspots: **17 → 6**. The D-phase store/handler splits
   resolved 12 of the 17. One new offender appeared:
   `parseAgentFrontmatter` CC=25 — Sprint A2 code I just landed.
@@ -1571,8 +1627,6 @@ check we can't trust. `bun run check` now includes `lint:eslint`.
 §8 Phase F.4 marked ✅ Done.
 
 ---
-
-
 
 **Takeaway:** Workspace groups landed on the third attempt. **v1 (nested
 dockview, 2026-05-24, reverted at `a1d7a21`)** died on `require()` in browser
@@ -1594,13 +1648,13 @@ properties that body-swap couldn't deliver.
 
 ### Commits (in order)
 
-| Commit | Phase | What |
-|---|---|---|
-| `9b9cf11` | (deps) | dockview 6.4.0 → 6.6.1, plus 5 other patch bumps. Critical because 6.6.1's #1304 fix retroactively explains v1/v2 instability. |
-| `674e93a` | 1 | Types + `composePersistLayout` (cache-first) + `bootLayout` extracted from App.vue (650→508 LOC; rule 19). No behavior change. |
-| `5d3943e` | 2 | `groupsStore` data layer + v2→v3 migration inline in `hydrate()`. 27 unit tests including real-DockviewComponent-fromJSON round-trip via `removeSessionFromBody`. |
-| `f6bfbd3` | 3 | `GroupPanel.vue` + `GroupTab.vue` + outer mount; `layoutStore.bodyApi` accessor (active group's inner OR outer fallback); `LAYOUT_SCHEMA_VERSION=3`. Smoke now asserts 2 `.dv-dockview` nodes — proves nesting end to end. |
-| (HEAD) | 4-8 | `useGroupsActions` composable, consolidated `onWillShowOverlay`, palette commands. |
+| Commit    | Phase  | What                                                                                                                                                                                                                       |
+| --------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `9b9cf11` | (deps) | dockview 6.4.0 → 6.6.1, plus 5 other patch bumps. Critical because 6.6.1's #1304 fix retroactively explains v1/v2 instability.                                                                                             |
+| `674e93a` | 1      | Types + `composePersistLayout` (cache-first) + `bootLayout` extracted from App.vue (650→508 LOC; rule 19). No behavior change.                                                                                             |
+| `5d3943e` | 2      | `groupsStore` data layer + v2→v3 migration inline in `hydrate()`. 27 unit tests including real-DockviewComponent-fromJSON round-trip via `removeSessionFromBody`.                                                          |
+| `f6bfbd3` | 3      | `GroupPanel.vue` + `GroupTab.vue` + outer mount; `layoutStore.bodyApi` accessor (active group's inner OR outer fallback); `LAYOUT_SCHEMA_VERSION=3`. Smoke now asserts 2 `.dv-dockview` nodes — proves nesting end to end. |
+| (HEAD)    | 4-8    | `useGroupsActions` composable, consolidated `onWillShowOverlay`, palette commands.                                                                                                                                         |
 
 ### Design decisions that survived rubber-duck round 2
 
@@ -1690,11 +1744,12 @@ it with dockview's **native vertical tab strip** on both edges. Left
 edge hosts Sessions/Terminals/Jobs/Logs as vertical tabs; right edge
 hosts Session Details + Library (Library moved over). Added a thin
 22 px custom status bar at the bottom for non-panel actions (Settings
-+ Dev wrench). Schema-bumped persisted layout to v2 with a narrow
-migration that preserves chat-session resumption. Six 619-test gate
-runs along the way; final boot timing shows the seed taking 37 ms in
-real dev and 45–49 ms in CI smoke (well under the 50 ms regression
-gate set during planning). Mount-cost gate held.
+
+- Dev wrench). Schema-bumped persisted layout to v2 with a narrow
+  migration that preserves chat-session resumption. Six 619-test gate
+  runs along the way; final boot timing shows the seed taking 37 ms in
+  real dev and 45–49 ms in CI smoke (well under the 50 ms regression
+  gate set during planning). Mount-cost gate held.
 
 ### Why this exists (after defending the custom rail for five turns)
 
@@ -1710,12 +1765,12 @@ tool-window pattern. We hand-rolled all of this from scratch.
 Four "load-bearing reasons" I gave the user defending the custom
 rail all turned out wrong:
 
-| What I claimed | Reality |
-|---|---|
-| "Must survive all panels closed" | Edge group collapses to 44 px strip, stays visible |
-| "Toggle-on-second-click" | Native dockview handler already does this |
-| "Action items aren't panels" | Settings + Dev wrench live in a thin status bar (different widget, different role) |
-| "Top/bottom stack" | Status bar covers it cleanly without inheriting dockview semantics |
+| What I claimed                   | Reality                                                                            |
+| -------------------------------- | ---------------------------------------------------------------------------------- |
+| "Must survive all panels closed" | Edge group collapses to 44 px strip, stays visible                                 |
+| "Toggle-on-second-click"         | Native dockview handler already does this                                          |
+| "Action items aren't panels"     | Settings + Dev wrench live in a thin status bar (different widget, different role) |
+| "Top/bottom stack"               | Status bar covers it cleanly without inheriting dockview semantics                 |
 
 ### Architecture (v2)
 
@@ -1756,6 +1811,7 @@ in `App.vue:restoreFromLayout`:
 ### Files
 
 **Added:**
+
 - `src/components/shell/ActivityBarTab.vue` — icon+tooltip tab
   renderer used via `tabComponent: 'activityTab'`. NO click handler:
   dockview's native tab click handler already does activate +
@@ -1768,6 +1824,7 @@ in `App.vue:restoreFromLayout`:
   toggle semantics.
 
 **Deleted:**
+
 - `src/components/shell/ActivityBar.vue` (~280 LOC)
 - `src/components/shell/ActivityButton.vue` (~130 LOC)
 - `src/stores/shell/__tests__/layoutStore.activityBarExclusivity.test.ts`
@@ -1775,6 +1832,7 @@ in `App.vue:restoreFromLayout`:
   exists)
 
 **Reshaped:**
+
 - `src/constants/panels.ts` — added `LEFT_ACTIVITY_TABS` +
   `RIGHT_ACTIVITY_TABS` seed inventories; removed
   `ACTIVITY_BAR_PANEL_IDS` (no longer needed without exclusivity).
@@ -1802,15 +1860,15 @@ in `App.vue:restoreFromLayout`:
 Critique caught 3 BLOCKERS + 4 SIGNIFICANT items before any code
 got written. All seven landed as concrete plan revisions:
 
-| # | Severity | Finding | Plan fix |
-|---|---|---|---|
-| 1 | BLOCKER | `<DockviewVue>` has no `tabComponents` prop | Global registration in `src/main.ts` |
-| 2 | BLOCKER | Hard reset loses chat resumption | Narrow migration: extract IDs first |
-| 3 | BLOCKER | `setEdgeGroupCollapsed` not public | Use `getEdgeGroup().collapse()/expand()` |
-| 4 | SIG | Native click already toggles | No click handler in `ActivityBarTab` |
-| 5 | SIG | `detailsOpen` would always be true | Redefine as expanded && active |
-| 6 | SIG | Eager mount cost | Measurement gate (passed) |
-| 7 | SIG | Chat scroll not resize-anchored | Deferred to follow-up — see open items |
+| #   | Severity | Finding                                     | Plan fix                                 |
+| --- | -------- | ------------------------------------------- | ---------------------------------------- |
+| 1   | BLOCKER  | `<DockviewVue>` has no `tabComponents` prop | Global registration in `src/main.ts`     |
+| 2   | BLOCKER  | Hard reset loses chat resumption            | Narrow migration: extract IDs first      |
+| 3   | BLOCKER  | `setEdgeGroupCollapsed` not public          | Use `getEdgeGroup().collapse()/expand()` |
+| 4   | SIG      | Native click already toggles                | No click handler in `ActivityBarTab`     |
+| 5   | SIG      | `detailsOpen` would always be true          | Redefine as expanded && active           |
+| 6   | SIG      | Eager mount cost                            | Measurement gate (passed)                |
+| 7   | SIG      | Chat scroll not resize-anchored             | Deferred to follow-up — see open items   |
 
 ### Self code-review pass (per plan §14)
 
@@ -1863,18 +1921,18 @@ gotchas.
 
 ### Manual test list (AGENTS.md rule 10)
 
-| # | Steps | Expected | Why not automated |
-|---|---|---|---|
-| 1 | Boot fresh (delete `dockview.layout` field in settings.json). | Left strip shows 4 vertical icons (list, chevron, clock, bars); right strip 2 (info-circle, book); both collapsed at 44 px. | Visual rendering / dockview chrome |
-| 2 | Click Sessions tab on left. | Strip expands to ~280 px; Sessions list visible; tab highlighted. | Native dockview UX |
-| 3 | Click Sessions again. | Strip collapses to 44 px; tabs stay visible. | Native dockview UX |
-| 4 | Drag Sessions tab from strip into the main grid. | Becomes a tabbed panel in main grid; left strip loses that tab. | Drag-and-drop runtime behavior |
-| 5 | Drag it back onto left strip. | Re-docks as a left tab. | Drag-and-drop runtime behavior |
-| 6 | Click Settings cog in status bar. | Settings opens in main grid (one tab). Second click focuses, doesn't toggle. | Status bar wiring |
-| 7 | Boot with a pre-v2 stored layout that had 2+ chat sessions open. | "migrating layout v1 → v2" log line; chats resume into the body grid at default tiling; no error toasts. | One-time migration path |
-| 8 | Open Session Details via existing header button. | Right rail expands with session-details active. Button shows pressed state. | New `detailsOpen` semantics |
-| 9 | Resize window vertically while chat is at bottom. | Chat may drift slightly off bottom after status bar gain — known limitation, scroll-anchor patch deferred. | Resize-anchor behavior |
-| 10 | Long-press / right-click a vertical tab. | Dockview's native context menu (rename, close, popout). | Dockview default chrome |
+| #   | Steps                                                            | Expected                                                                                                                    | Why not automated                  |
+| --- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 1   | Boot fresh (delete `dockview.layout` field in settings.json).    | Left strip shows 4 vertical icons (list, chevron, clock, bars); right strip 2 (info-circle, book); both collapsed at 44 px. | Visual rendering / dockview chrome |
+| 2   | Click Sessions tab on left.                                      | Strip expands to ~280 px; Sessions list visible; tab highlighted.                                                           | Native dockview UX                 |
+| 3   | Click Sessions again.                                            | Strip collapses to 44 px; tabs stay visible.                                                                                | Native dockview UX                 |
+| 4   | Drag Sessions tab from strip into the main grid.                 | Becomes a tabbed panel in main grid; left strip loses that tab.                                                             | Drag-and-drop runtime behavior     |
+| 5   | Drag it back onto left strip.                                    | Re-docks as a left tab.                                                                                                     | Drag-and-drop runtime behavior     |
+| 6   | Click Settings cog in status bar.                                | Settings opens in main grid (one tab). Second click focuses, doesn't toggle.                                                | Status bar wiring                  |
+| 7   | Boot with a pre-v2 stored layout that had 2+ chat sessions open. | "migrating layout v1 → v2" log line; chats resume into the body grid at default tiling; no error toasts.                    | One-time migration path            |
+| 8   | Open Session Details via existing header button.                 | Right rail expands with session-details active. Button shows pressed state.                                                 | New `detailsOpen` semantics        |
+| 9   | Resize window vertically while chat is at bottom.                | Chat may drift slightly off bottom after status bar gain — known limitation, scroll-anchor patch deferred.                  | Resize-anchor behavior             |
+| 10  | Long-press / right-click a vertical tab.                         | Dockview's native context menu (rename, close, popout).                                                                     | Dockview default chrome            |
 
 ### Known follow-ups (intentional out-of-scope)
 
@@ -1895,9 +1953,9 @@ gotchas.
 
 - Plan: `~/.copilot/session-state/18c42172-.../plan.md`
 - Mount-cost gate output: `[layoutStore.seedDefaultLayout] seeded
-  edge tabs in 37ms` (dev), 45–49 ms (CI smoke).
+edge tabs in 37ms` (dev), 45–49 ms (CI smoke).
 - Wire-shape: `dockview.edgeGroups.left.group.views =
-  ["sessions-manager","terminals-panel","jobs-panel","log-viewer"]`,
+["sessions-manager","terminals-panel","jobs-panel","log-viewer"]`,
   `right.group.views = ["session-details","library"]`. Both
   `collapsed: true` on first boot.
 
@@ -1915,13 +1973,13 @@ panels.
 
 ### Six commits, each driven by a user-reported symptom
 
-| Commit | Symptom | Real cause | Fix |
-|---|---|---|---|
-| `b9fa7fd` | (proactive) need to inspect live DOM/CSS without writing pwtest scaffolding every time | rung-3 of diagnostic ladder was missing | `tools/inspect.ts` — Playwright + CDP harness with `--rules` (CSS cascade) + `--eval` (arbitrary JS) + `--click` + `--screenshot` |
-| `f0268df` | "Session settings styles broken, minimums of others wrong" | v2 collapsed each panel's per-panel min/initial widths into one edge-group constraint. Sessions's 180 floor lost; SessionDetails got the 320 default. v1 `EDGE_PANEL_DEFINITIONS` table orphaned but still referenced. | Promote per-tab `minimumSize` + `initialSize` into the seed (`LEFT_ACTIVITY_TABS` / `RIGHT_ACTIVITY_TABS`). Original plan: dynamic tracking via active-panel events. Probe revealed dockview's splitview reads `EdgeGroupView._expandedMinimumSize` from a private field with NO public setter — `setSize` on the api fires an event the shell ignores. Settled for static `max(all-mins)` per side at seed time. Cleanup: ~570 lines of v1 helpers deleted (`EDGE_PANEL_DEFINITIONS`, `LEFT_EDGE_MIN_BY_PANEL_ID`, `SESSION_DETAILS_MIN_WIDTH`, `lastSessionDetailsWidth` + width helpers, `recreateKnownEdgeGroup`, `isEdgeBelowMinimum`, etc.). |
-| `dcc8da9` | "5 regressions in v2: icon stays pressed after collapse, no minimums (still), Sessions icon too similar to Logs, can drag activity-bar tabs anywhere, playground gone" | Each cause different — see below | (1) Subscribe to `panel.api.group.onDidCollapsedChange`, gate `is-active` on `!groupCollapsed`. (2) `max(all-mins)` static seed (per the previous commit's discovery). (3) `pi-list` → `pi-comments` (better chat metaphor, distinct from Logs's `pi-bars`). (4) `dock.api.onWillShowOverlay` — `evt.preventDefault()` when dragging an activity-bar tab AND target isn't an edge group's tab strip. (5) Verified via inspect probe that the wrench IS rendered in dev mode; bumped to 20px + brand-orange tint for discoverability. |
-| `9624017` | "Settings now acts different" (after I'd moved it to a body grid tab in v2) | I made a unilateral design call to drop Settings from the activity bar. User wanted v1 behavior back. | Ran `ask_user` with structured options (placement: `left_edge_tab`, behavior: `toggle`). Added Settings back as 5th left tab. Renamed `openSettingsInBody` → `toggleSettings`. Removed `stripPanelFromLayout(SETTINGS_PANEL_ID)` from boot — Settings is now a persistent tab. Padded smoke RPC stub to full Settings shape (Settings is now eagerly mounted, would crash on missing `terminal` config). Seed time jumped from ~50 ms → ~100 ms because Settings is a heavy multi-section panel. Flagged but not addressed. |
-| `936bbd3` | "Group collapse buttons in settings don't work" | Phase D.1's SettingsPanel split (commit `9125e50`, ~24 hours earlier) introduced `@update:collapsed="setCollapsed('appearance')"`. Vue's compiler treats `@event="call()"` as an INLINE handler: compiles to `($event) => setCollapsed('appearance')`, then discards the returned closure. The new collapsed value never reached the reactive map. Bug stayed dormant in v1 because Settings was rarely opened; v2's permanent-tab promotion surfaced it. | Switched all 7 sections (Appearance / Workspaces / Terminal / Notifications / Permissions / Diagnostics / About) to `v-model:collapsed="collapsed.appearance"`. Vue's sugar generates the right setter. Deleted the curried `setCollapsed` helper. Initialized all section ids to `false` in the reactive map so `v-model` has a defined starting value. Added `src/components/settings/__tests__/SettingsGroup.collapse.test.ts` — 2 cases: one functional (mount + click + assert), one **documentary** that reconstructs the bad inline-handler pattern in isolation and asserts the inner closure never runs, so a future agent fails the test with an explanation. |
+| Commit    | Symptom                                                                                                                                                                | Real cause                                                                                                                                                                                                                                                                                                                                                                                                                                                | Fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `b9fa7fd` | (proactive) need to inspect live DOM/CSS without writing pwtest scaffolding every time                                                                                 | rung-3 of diagnostic ladder was missing                                                                                                                                                                                                                                                                                                                                                                                                                   | `tools/inspect.ts` — Playwright + CDP harness with `--rules` (CSS cascade) + `--eval` (arbitrary JS) + `--click` + `--screenshot`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `f0268df` | "Session settings styles broken, minimums of others wrong"                                                                                                             | v2 collapsed each panel's per-panel min/initial widths into one edge-group constraint. Sessions's 180 floor lost; SessionDetails got the 320 default. v1 `EDGE_PANEL_DEFINITIONS` table orphaned but still referenced.                                                                                                                                                                                                                                    | Promote per-tab `minimumSize` + `initialSize` into the seed (`LEFT_ACTIVITY_TABS` / `RIGHT_ACTIVITY_TABS`). Original plan: dynamic tracking via active-panel events. Probe revealed dockview's splitview reads `EdgeGroupView._expandedMinimumSize` from a private field with NO public setter — `setSize` on the api fires an event the shell ignores. Settled for static `max(all-mins)` per side at seed time. Cleanup: ~570 lines of v1 helpers deleted (`EDGE_PANEL_DEFINITIONS`, `LEFT_EDGE_MIN_BY_PANEL_ID`, `SESSION_DETAILS_MIN_WIDTH`, `lastSessionDetailsWidth` + width helpers, `recreateKnownEdgeGroup`, `isEdgeBelowMinimum`, etc.).                      |
+| `dcc8da9` | "5 regressions in v2: icon stays pressed after collapse, no minimums (still), Sessions icon too similar to Logs, can drag activity-bar tabs anywhere, playground gone" | Each cause different — see below                                                                                                                                                                                                                                                                                                                                                                                                                          | (1) Subscribe to `panel.api.group.onDidCollapsedChange`, gate `is-active` on `!groupCollapsed`. (2) `max(all-mins)` static seed (per the previous commit's discovery). (3) `pi-list` → `pi-comments` (better chat metaphor, distinct from Logs's `pi-bars`). (4) `dock.api.onWillShowOverlay` — `evt.preventDefault()` when dragging an activity-bar tab AND target isn't an edge group's tab strip. (5) Verified via inspect probe that the wrench IS rendered in dev mode; bumped to 20px + brand-orange tint for discoverability.                                                                                                                                    |
+| `9624017` | "Settings now acts different" (after I'd moved it to a body grid tab in v2)                                                                                            | I made a unilateral design call to drop Settings from the activity bar. User wanted v1 behavior back.                                                                                                                                                                                                                                                                                                                                                     | Ran `ask_user` with structured options (placement: `left_edge_tab`, behavior: `toggle`). Added Settings back as 5th left tab. Renamed `openSettingsInBody` → `toggleSettings`. Removed `stripPanelFromLayout(SETTINGS_PANEL_ID)` from boot — Settings is now a persistent tab. Padded smoke RPC stub to full Settings shape (Settings is now eagerly mounted, would crash on missing `terminal` config). Seed time jumped from ~50 ms → ~100 ms because Settings is a heavy multi-section panel. Flagged but not addressed.                                                                                                                                             |
+| `936bbd3` | "Group collapse buttons in settings don't work"                                                                                                                        | Phase D.1's SettingsPanel split (commit `9125e50`, ~24 hours earlier) introduced `@update:collapsed="setCollapsed('appearance')"`. Vue's compiler treats `@event="call()"` as an INLINE handler: compiles to `($event) => setCollapsed('appearance')`, then discards the returned closure. The new collapsed value never reached the reactive map. Bug stayed dormant in v1 because Settings was rarely opened; v2's permanent-tab promotion surfaced it. | Switched all 7 sections (Appearance / Workspaces / Terminal / Notifications / Permissions / Diagnostics / About) to `v-model:collapsed="collapsed.appearance"`. Vue's sugar generates the right setter. Deleted the curried `setCollapsed` helper. Initialized all section ids to `false` in the reactive map so `v-model` has a defined starting value. Added `src/components/settings/__tests__/SettingsGroup.collapse.test.ts` — 2 cases: one functional (mount + click + assert), one **documentary** that reconstructs the bad inline-handler pattern in isolation and asserts the inner closure never runs, so a future agent fails the test with an explanation. |
 
 ### Drag restriction (commit `dcc8da9` detail)
 
@@ -1961,7 +2019,7 @@ at the initial size regardless.
 Drilled into `node_modules/dockview-core/dist/esm/dockview/dockviewShell.js`:
 
 - `EdgeGroupView.minimumSize` is a getter returning `_isCollapsed ?
-  _collapsedSize : _expandedMinimumSize`.
+_collapsedSize : _expandedMinimumSize`.
 - `_expandedMinimumSize` is set ONLY in the constructor from
   `options.minimumSize`.
 - The public `DockviewGroupPanelApi.setConstraints({minimumWidth})`
@@ -1985,7 +2043,7 @@ caught bugs that would have taken much longer without:
 1. **CSS cascade rule** (post-rail, commit `22d92db`): probe revealed
    `tabsActions.computed.display === "none"` while `inlineStyle === null`.
    That meant the hide came from a CSS rule. `ide_search_text
-   "dv-tabs-and-actions-container"` found the v1 carry-over instantly
+"dv-tabs-and-actions-container"` found the v1 carry-over instantly
    (`src/style.css:107`). Total time: minutes. Without the probe I
    was eyeballing the rendered DOM and would have hit it eventually,
    but slowly.
@@ -2025,8 +2083,8 @@ caught bugs that would have taken much longer without:
   constructor; `updateCollapsedSize` is reserved for ShellManager
   theme/gap recomputation; public `DockviewApi` exposes only
   `addEdgeGroup / getEdgeGroup / setEdgeGroupVisible /
-  isEdgeGroupVisible / removeEdgeGroup`). Includes our `max(min-over-
-  all-tabs)` workaround and the proposed `setEdgeGroupConstraints` /
+isEdgeGroupVisible / removeEdgeGroup`). Includes our `max(min-over-
+all-tabs)` workaround and the proposed `setEdgeGroupConstraints` /
   `getEdgeGroup(pos).setConstraints` shapes. Also filed
   [#1306](https://github.com/mathuo/dockview/issues/1306) ("vertical
   split of edge groups — multiple edge groups per side, stacked with
@@ -2070,22 +2128,23 @@ without changing behavior.
 
 ### Complexity refactors (10 in total this session)
 
-| Target | Before | After | Approach |
-|---|---:|---:|---|
-| `messageHandlers.ts:user.message` | 24 | ~6 | `mergeKnownUserMessage` + `mergeOptimisticUserMessage` extracts — main handler becomes 3-step flat sequence (known? optimistic? fresh) |
-| `messageHandlers.ts:normalizeAttachments` | 19 | ~4 | Per-type normalizers (file/directory/blob/selection) + `ATTACHMENT_NORMALIZERS` dispatch table |
-| `sessionEventForwarder.ts:forward` | 24 | ~3 | `logSessionEvent` (DIAGNOSTIC_EVENT_TYPES set) + `unwrapEvent` (SDK envelope + plain-object validation) + `handleSideEffects` (mode_changed / idle / title_changed) |
-| `pendingRequests.ts:respond` | 22 | ~3 | `validateRespond` + `buildSdkResult` switch + `buildPermissionResult` audit-log fire |
-| `useSessionUsage.ts:loadUsage` | 23 | ~5 | `normalizeRpcUsage` (7-ternary literal extract) + `asNumber` + `isUsageRpcPopulated` |
-| `settings.ts:coerceTerminal` | 20 | ~3 | Generic `coerceTrimmedString` + `coerceBoundedInt` helpers used at 6 inline sites |
-| `sessionReducer.ts:trackSessionArtifact` | 19 | ~7 | Module-level `SHELL_TOOL_NAMES` Set + `WRITE_TOOL_NEEDLES` / `WRITE_PATH_KEYS` arrays + `extractTouchedPath` helper |
-| `sessions.ts:cwdFor` | 18 | ~5 | `adoptCwd` helper encapsulates the U6 re-check-after-await + entry backfill pattern; both fallback blocks reduce to 3 lines |
-| `stderrFilter.ts` arrow | 18 | ~4 | `chunkToText` (Buffer → string) + `filterStderrLines` (per-line keep/log/drop) |
-| `McpServerForm.vue:structuredFromConfig` | 17 | ~3 | `applyLocalConfig` / `applyHttpConfig` per-transport branches + `entriesFromRecord` env/headers helper |
+| Target                                    | Before | After | Approach                                                                                                                                                            |
+| ----------------------------------------- | -----: | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `messageHandlers.ts:user.message`         |     24 |    ~6 | `mergeKnownUserMessage` + `mergeOptimisticUserMessage` extracts — main handler becomes 3-step flat sequence (known? optimistic? fresh)                              |
+| `messageHandlers.ts:normalizeAttachments` |     19 |    ~4 | Per-type normalizers (file/directory/blob/selection) + `ATTACHMENT_NORMALIZERS` dispatch table                                                                      |
+| `sessionEventForwarder.ts:forward`        |     24 |    ~3 | `logSessionEvent` (DIAGNOSTIC_EVENT_TYPES set) + `unwrapEvent` (SDK envelope + plain-object validation) + `handleSideEffects` (mode_changed / idle / title_changed) |
+| `pendingRequests.ts:respond`              |     22 |    ~3 | `validateRespond` + `buildSdkResult` switch + `buildPermissionResult` audit-log fire                                                                                |
+| `useSessionUsage.ts:loadUsage`            |     23 |    ~5 | `normalizeRpcUsage` (7-ternary literal extract) + `asNumber` + `isUsageRpcPopulated`                                                                                |
+| `settings.ts:coerceTerminal`              |     20 |    ~3 | Generic `coerceTrimmedString` + `coerceBoundedInt` helpers used at 6 inline sites                                                                                   |
+| `sessionReducer.ts:trackSessionArtifact`  |     19 |    ~7 | Module-level `SHELL_TOOL_NAMES` Set + `WRITE_TOOL_NEEDLES` / `WRITE_PATH_KEYS` arrays + `extractTouchedPath` helper                                                 |
+| `sessions.ts:cwdFor`                      |     18 |    ~5 | `adoptCwd` helper encapsulates the U6 re-check-after-await + entry backfill pattern; both fallback blocks reduce to 3 lines                                         |
+| `stderrFilter.ts` arrow                   |     18 |    ~4 | `chunkToText` (Buffer → string) + `filterStderrLines` (per-line keep/log/drop)                                                                                      |
+| `McpServerForm.vue:structuredFromConfig`  |     17 |    ~3 | `applyLocalConfig` / `applyHttpConfig` per-transport branches + `entriesFromRecord` env/headers helper                                                              |
 
 ### Remaining 5
 
 All at CC 16-22 with no obvious natural seam:
+
 - `sessions.ts:resume` CC 16 — lifecycle method, barely over
 - `sessions.ts:createSession` (sessionsStore.ts) CC 18 — lifecycle
 - `TerminalPanel.vue:initXterm` CC 16 — addon load orchestration
@@ -2095,6 +2154,7 @@ All at CC 16-22 with no obvious natural seam:
 ### Pattern that emerged
 
 Every honest refactor this session was either:
+
 1. **Per-type dispatch via a lookup table** (`TOOL_KIND_BY_NAME`,
    `ATTACHMENT_NORMALIZERS`, `DIAGNOSTIC_EVENT_TYPES`,
    `SHELL_TOOL_NAMES`), OR
@@ -2113,6 +2173,7 @@ smoke (prod + hmr) clean.
 ### Next session
 
 Phase F's complexity work is effectively done. Remaining audit items:
+
 - `setTimeout(fn, 0)` focus hacks + double-rAF settle patterns
   (untouched; would need a `useFocusOnNextTick` / VueUse-driven
   composable)
@@ -2152,7 +2213,7 @@ exclusive-removal extract).
 - **`ToolDetails.vue:53` CC 28 → 2** — the 12-case
   switch-on-`toolName` mapping tool-name aliases to a normalized
   `kind` became a module-level `TOOL_KIND_BY_NAME: Record<string,
-  ToolKind>` lookup table. Computed shrinks to:
+ToolKind>` lookup table. Computed shrinks to:
   ```ts
   if (props.mcpServerName) return 'mcp';
   return TOOL_KIND_BY_NAME[props.toolName] ?? 'generic';
@@ -2238,12 +2299,12 @@ was narrower than the audit suggested.
   jscpd false positive — there's no aggregation in common, just
   the formatter.
 - `src/lib/codeMirrorShared.ts` (~80 lines) — `buildCodeMirrorTheme`
-  + `resolveLanguageWithFallback`. NOT a full `useCodeMirror()`
-  composable per rubber-duck: DiffEditor's MergeView wraps its
-  two halves in a way that makes language-Compartment reconfigure
-  unreliable; the file explicitly rebuilds on language change.
-  CodeEditor uses a Compartment. Different lifecycles, shared
-  visual theme + language resolution only.
+  - `resolveLanguageWithFallback`. NOT a full `useCodeMirror()`
+    composable per rubber-duck: DiffEditor's MergeView wraps its
+    two halves in a way that makes language-Compartment reconfigure
+    unreliable; the file explicitly rebuilds on language change.
+    CodeEditor uses a Compartment. Different lifecycles, shared
+    visual theme + language resolution only.
 - `src/components/shared/JsonSchemaFieldFrame.vue` (~45 lines) —
   the `<label>` + required-marker + `<p class="jsf-description">`
   chrome shared by 4 of the 5 type branches in `JsonSchemaField.vue`
@@ -2253,7 +2314,7 @@ was narrower than the audit suggested.
   duplication.
 - `src/components/shell/ActivityButton.vue` (~50 lines) — the
   identical `<button>` markup the rail rendered twice (top stack
-  + bottom stack). Audit #8.
+  - bottom stack). Audit #8.
 
 ### What got rejected and why
 
@@ -2315,7 +2376,7 @@ machine. The 608-test suite + Playwright smoke serve as the net.
 ### Commits
 
 - `<r1-sha>` refactor(d4.1-3): extract format helpers + toolbar layout
-  + attachment ingestion
+  - attachment ingestion
 - `<r2-sha>` refactor(d4.4-6): extract submit button + editor bridge +
   command-mode composable
 
@@ -2395,7 +2456,7 @@ extracted code was all pure or self-contained:
 
 The 608-test suite passed across every commit. If a real Lexical
 state-machine regression slips through, the next agent should write
-the missing tests *for the regression* rather than retroactively
+the missing tests _for the regression_ rather than retroactively
 back-fill an 8-test pre-net.
 
 ### Gate
@@ -2559,9 +2620,9 @@ collapsed.
   truncateHistory / fork / setApproveAll / resetApprovals /
   getUsageMetrics) + 2 client-level methods (listBuiltinTools,
   getAccountQuota). Each was previously ~15-20 lines of `entry →
-  try → catch → throw AppError.sdk`; now most are 1-line
+try → catch → throw AppError.sdk`; now most are 1-line
   `wrapSdk` closures. Takes `{ctx, approveAllBySession,
-  modeBySession, pending}` because `setMode` writes
+modeBySession, pending}` because `setMode` writes
   `modeBySession` + settles the pending queue on autopilot, and
   `setApproveAll` writes `approveAllBySession`.
 
@@ -2696,12 +2757,10 @@ registry.
 
 ---
 
-
-
 **Takeaway:** Landed the 8-test pre-extraction safety net for `ChatWindow.vue`
 (1,185 lines, 0 unit tests pre-this-session). Rubber-duck critiqued the
-proposed split shape from the 2026-05-25 handoff and recommended a *single
-timeline-state controller* with semantic APIs instead of the narrow
+proposed split shape from the 2026-05-25 handoff and recommended a _single
+timeline-state controller_ with semantic APIs instead of the narrow
 `useChatEventFlush` + escape-hatch mutations originally planned. Captured the
 revised plan in `STATUS.md` so the next session opens the right surface. No
 extraction yet — the gate (lint + 608 tests + build + Playwright smoke) is
@@ -2715,7 +2774,8 @@ green and the regression net is in place.
 ### What's pinned
 
 `src/components/chat/__tests__/ChatWindow.test.ts` — 8 tests across happy-dom
-+ @testing-library/vue + Pinia + a fake `RpcBridge`:
+
+- @testing-library/vue + Pinia + a fake `RpcBridge`:
 
 1. **flush respects droppedEventCount across a ring-buffer trim** — pushes 3
    user events at `dropped=0`, then rerenders with `dropped=1` + a fresh
@@ -2727,7 +2787,7 @@ green and the regression net is in place.
 3. **send forwards text + attachments through sessionsStore** — emits
    `submit` on the stubbed MessageComposer, asserts the optimistic user
    bubble lands AND `invokeCommand('sendMessage', { sessionId, text,
-   attachments })` is called with the right shape.
+attachments })` is called with the right shape.
 4. **retry walks back to the nearest user-with-eventId anchor** — feeds
    user→assistant→user→assistant, clicks the last assistant's stub-retry,
    asserts `truncateSessionHistory({eventId:'user-evt-2'})` + a `sendMessage`
@@ -2769,7 +2829,7 @@ the test process, and `mock.restore()` does NOT clear module mocks
 `src/components/chat/__tests__/ChatWindow.test.ts` afterAll comment).
 Mocking only `MessageComposer` + `MessageEditor` keeps the leak
 harmless because neither has its own unit test today. Mocking
-`UserMessageBody` / `MessageContent` also worked, but those *do* have
+`UserMessageBody` / `MessageContent` also worked, but those _do_ have
 tests, and the leak silently swapped them out — all 3 attachment-pill
 assertions in `UserMessageBody.test.ts` started failing depending on
 file-execution order.
@@ -2779,9 +2839,10 @@ file-execution order.
 The original handoff proposed `useChatEventFlush` + `useChatScroll` +
 `useMessageActions` + optional `<ChatTranscript>`. Rubber-duck flagged
 that this leaves `items` + `ambient` + `idCounter` + `processedAbsolute`
-+ `isFirstBatch` + `isSendingFallback` as shared mutable refs across
-composables, with edit-save and submit both reaching across the seam.
-The revised target:
+
+- `isFirstBatch` + `isSendingFallback` as shared mutable refs across
+  composables, with edit-save and submit both reaching across the seam.
+  The revised target:
 
 1. **`useChatScroll(messagesEl, tileEl)`** — extract first, lowest risk.
    Owns `scrollToBottom()` (double-rAF + scrollHeight) and the resize
@@ -2793,12 +2854,12 @@ The revised target:
    `appendSystemError(text)`, `resetForReplay({ markSending })`,
    `scheduleFlush()`, and the session-id watcher.
 3. **`useChatSubmit({timeline, scrollToBottom, sessionsStore, toasts,
-   sessionId, defaultSendMode, sendHandler})`** — the optimistic-send
+sessionId, defaultSendMode, sendHandler})`** — the optimistic-send
    orchestrator. Calls `timeline.appendOptimisticUser` then the
    transport (`sendHandler` if provided, else
    `sessionsStore.sendMessage`).
 4. **`useMessageActions({sessionId, items, composerRef, sessionsStore,
-   sessionsListStore, layoutStore, toasts, editingItemId, timeline})`**
+sessionsListStore, layoutStore, toasts, editingItemId, timeline})`**
    — edit / quote / retry / fork / fork-notice + their helpers.
    Calls `timeline.resetForReplay({markSending:true})` from the
    editor-save path instead of mutating cursor state directly.
@@ -2816,8 +2877,6 @@ survives the props→composable boundary.
 Vite + Electrobun build + Playwright smoke (prod + hmr). Green.
 
 ---
-
-
 
 **Takeaway:** Big code-quality push. 7 phases planned, 4.5 phases delivered. ~600 lines of hand-rolled infrastructure deleted, 4 real bugs fixed, 63 backend TS errors cleared and gated, all behind a rubber-duck pass per phase. Next session picks up at Phase D.2 (ChatWindow).
 
@@ -2858,6 +2917,7 @@ Vite + Electrobun build + Playwright smoke (prod + hmr). Green.
 **Net Phase A:** ~370 production lines of hand-rolled infra deleted, 3 real bugs fixed for free (OSC ST-terminator strip, Vue/SCSS getting HTML highlighting, untyped event coupling), +49 tests (551 → 600), lint clean throughout.
 
 **Real bugs surfaced by the regression-tests-first approach:**
+
 - The OSC ST-terminator (ESC\) test failed before strip-ansi swap and passed after — confirming the old regex had a greedy-body bug.
 
 ### Phase A.5 — Backend TypeScript cleanup ✅ DONE
@@ -2865,6 +2925,7 @@ Vite + Electrobun build + Playwright smoke (prod + hmr). Green.
 **User-spotted gap:** `bun run check` was hiding 63 TS errors in `src-bun/` because only the renderer's `vue-tsc` was in the lint gate.
 
 Cleared every single one and wired `bun run lint:tsc-bun` into `bun run check` so future regressions fail CI. Real risks surfaced (not just type noise):
+
 - `extension-management` + `extension-permission-access` permission kinds added to `PermissionRequestData` union (both renderer + backend) — they exist upstream but our union didn't include them, meaning those permission types were silently misrouting
 - `SessionRegistry.delete/getMetadata` calls in `test-server.ts` would crash at runtime — methods don't exist any more; replaced with `deleteCliSession`/`getCwd`
 - `CopilotClientOptions.cliPath` removed upstream → `RuntimeConnection.forStdio({path})`
@@ -2878,10 +2939,12 @@ AGENTS.md rule 22 added: "Never add new src-bun/ TypeScript errors. When you tou
 User asked "why are we using `@github/copilot` over `@github/copilot-sdk`?"
 
 Investigated both standalone versions:
+
 - `1.0.0-beta.4` (npm `latest`, 2026-05-24): lags the bundled SDK at 3 surfaces — `SessionContext.cwd` vs `workingDirectory`, `getMessages()` vs `getEvents()`, no `UserInputRequest`/`Response` exports
 - `1.0.0-beta.7` (`prerelease` tag, 2026-05-25): matches the bundled SDK — pinned this one explicitly
 
 3 deep `'../../../node_modules/...'` imports → clean `from '@github/copilot-sdk'`. Plus simplifications spotted in passing:
+
 - `ReasoningEffort` no longer hand-mirrored; derived from `SessionConfig['reasoningEffort']`
 - `UserInputRequest`/`Response` derived from `SessionConfig.onUserInputRequest` (package `exports` map blocks sub-paths)
 - Duplicate `setClientForTest`/`_setClientForTest` collapsed
@@ -2922,6 +2985,7 @@ Per the rubber-duck critique, **each remaining D target needs**:
 #### D.2 ChatWindow.vue (1,185 lines)
 
 **Before any extraction** — add 5 direct unit tests:
+
 - event stream flush respects `droppedEventCount`
 - timeline merges `commandResults` by synthetic order
 - send adds optimistic user message and forwards attachments
@@ -2933,10 +2997,12 @@ Then extract: `useChatEventFlush`, `useChatScroll`, `useMessageActions`, optiona
 #### D.3 sessions.ts (1,929 lines)
 
 Keep `SessionRegistry` as the public boundary (tests import it). Extract **sibling SDK-wrapper services** with a tiny context port:
+
 - `SessionAgentsService`, `SessionTasksService`, `SessionSkillsService`, `SessionMcpService`, `SessionPlanService`, optionally `SessionModelService`
 - Internal services receive `{ getEntry(sessionId), getClient(), wrapSdkError() }` — **do NOT let services mutate `entries` directly**
 
 Keep these in `SessionRegistry`:
+
 - `entries` ownership
 - `create`/`resume`/`disconnect`/`shutdownAll`
 - `baseSessionConfig`
@@ -2947,6 +3013,7 @@ These areas share lifecycle invariants — splitting them into sibling services 
 #### D.4 MessageComposer.vue (1,389 lines)
 
 **Before any extraction** — add regression tests for:
+
 - submit payload including attachment deletion/retention
 - focus after toolbar/send/command-mode exit
 - paste/drop blob size handling
@@ -2966,6 +3033,7 @@ Recent dockview-types extraction (Phase C.1) means another touch is high blast r
 ### Phase E — Deduplication (not yet started)
 
 Per §3 jscpd scan (70 clones / 2.56%). Pure refactors with no dependency on Phase D. Top extraction candidates from the rubber-duck-ranked plan:
+
 1. `JsonSchemaField.vue` — 4 near-identical type branches (~90 lines)
 2. Library tabs share user/project pattern (~110 lines) → `<LibraryTabPanel :user :project>` wrapper
 3. Task aggregation (3 sites) → `useTaskAggregation` composable
@@ -2985,6 +3053,7 @@ Per §3 jscpd scan (70 clones / 2.56%). Pure refactors with no dependency on Pha
 ### AGENTS.md anti-laziness rules added this sprint
 
 Rules 16–22 added with concrete precedents from this sprint:
+
 - **16** Build vs Buy — search package.json/VueUse/PrimeVue/npm first
 - **17** Install the proper dep instead of maintaining a workaround table (precedent: 4-entry vue/scss/jsonc/pyi workaround that the user caught)
 - **18** Never `window.dispatchEvent('app:...')` for in-app messaging (precedent: 13 dispatchers + 9 listeners across 9 files of untyped spaghetti)
@@ -3085,6 +3154,7 @@ around all component registrations to prevent ESLint from ever changing the casi
 
 Replaced large if/else chains dispatching on event type strings with
 `Record<string, Handler>` objects:
+
 - `applyToRecord` in sessionReducer.ts: one handler per SDK event type
 - `processEvents` in chatEvents.ts: extracted subagent routing helpers
 - `summarizePermission` in sessionHelpers.ts: permission type → label
@@ -3199,7 +3269,6 @@ The `@github/copilot` SDK renamed `session.getMessages()` to
 the same `SessionEvent[]` shape. Found at
 `node_modules/@github/copilot/copilot-sdk/index.js:5381`.
 
-
 ## 2026-05-26 — SDK migration + session/discovery bug fixes
 
 **Takeaway:** Removed `copilot-sdk-supercharged` (dead weight — ALL features
@@ -3229,17 +3298,17 @@ discovery).
      `session.title_changed` via `emitEphemeral()` which may not always
      reach the SDK's `session.on()` dispatcher (ephemeral events are not
      guaranteed to be forwarded to app-level handlers).
-   Files: `src/stores/layoutStore.ts`, `src/App.vue`, `src-bun/app/sessions.ts`.
+     Files: `src/stores/layoutStore.ts`, `src/App.vue`, `src-bun/app/sessions.ts`.
 
 2b. **Workspace grouping fix** (`f460121`): The SDK's `toSessionMetadata()`
-   (copilot-sdk/index.js:6737) remaps the raw wire `context.cwd` →
-   `context.workingDirectory`. After the supercharged→official migration,
-   our code was still reading `context?.cwd` which returned `undefined`,
-   making every session appear under "No workspace". Fixed 4 locations in
-   `sessions.ts` (`list()`, `resume()`, `cwdFor()` ×2), plus `fakeClient.ts`
-   and test fixtures.
-   Files: `src-bun/app/sessions.ts`, `src-bun/app/fakeClient.ts`,
-   `src-bun/__tests__/sessions.test.ts`.
+(copilot-sdk/index.js:6737) remaps the raw wire `context.cwd` →
+`context.workingDirectory`. After the supercharged→official migration,
+our code was still reading `context?.cwd` which returned `undefined`,
+making every session appear under "No workspace". Fixed 4 locations in
+`sessions.ts` (`list()`, `resume()`, `cwdFor()` ×2), plus `fakeClient.ts`
+and test fixtures.
+Files: `src-bun/app/sessions.ts`, `src-bun/app/fakeClient.ts`,
+`src-bun/__tests__/sessions.test.ts`.
 
 3. **Session close/detach fix** — `onDidRemovePanel` now checks
    `record.isThinking` and `record.pendingRequests` in addition to
@@ -3269,6 +3338,7 @@ discovery).
 
 All 14 features claimed by `copilot-sdk-supercharged` README exist in the
 official `@github/copilot` SDK:
+
 - Per-session auth, idle timeout, SessionFs, Commands, system prompt,
   per-agent skills, excludedTools, runtime headers, model capabilities,
   config discovery, sub-agent streaming, getMetadata, MCP config types,
@@ -3299,7 +3369,7 @@ whose ConPTY implementation supports `Bun.spawn(..., { terminal })`.
   bundles Bun 1.3.13 by default. That binary exposes `Bun.Terminal` but
   throws `terminal option is not supported on this platform`; local Bun
   1.3.14 works. `electrobun.config.ts` now sets `build.bunVersion =
-  "1.3.14"` and `TerminalRegistry` no longer falls back to pipes.
+"1.3.14"` and `TerminalRegistry` no longer falls back to pipes.
 - `SessionHeaderControls` supports composer-left/composer-right areas, and
   PrimeVue model/reasoning menus append to `body` to avoid pane clipping.
 - Follow-up after visual review: compact composer now uses icon-only mode
@@ -3626,7 +3696,7 @@ restructured:
    sub-agent no longer collide.
 
 2. **Sub-agent lifecycle inline**. `subagent.started/.completed/
-   .failed` are not in `HANDLERS` (the family dispatch table) and
+.failed` are not in `HANDLERS` (the family dispatch table) and
    not in `IGNORED_EVENTS`. They're handled in `processEvents`
    itself because they need to mutate the routing map. Updated
    `split.test.ts` with an `INLINE_HANDLED` set so the
@@ -3659,10 +3729,11 @@ restructured:
 
 Collapsible card with status pill (running blue / completed green
 / failed red), display name, elapsed time, optional description
-+ error. Body renders nested items[] — only the four kinds we
-expect to find there: assistant, reasoning, tool, system. Default
-expanded while running, collapsed after completion. User toggle
-wins after first click.
+
+- error. Body renders nested items[] — only the four kinds we
+  expect to find there: assistant, reasoning, tool, system. Default
+  expanded while running, collapsed after completion. User toggle
+  wins after first click.
 
 ### What's not in 19c (deferred)
 
@@ -4271,7 +4342,7 @@ notable ones I adopted:
   it as `AppError.sdk` would give the renderer the wrong error kind).
   Keep server-vs-session split: session-scoped MCP methods stay on
   `SessionRegistry`. Wire BOTH composition roots (`src-bun/index.ts`
-  + `src-bun/test-server.ts`).
+  - `src-bun/test-server.ts`).
 - **SkillsRegistry**: mirror McpRegistry exactly; same constructor
   shape, same `withClient` helper, same composition. Don't add a
   shared normalizer between `listSkills` (session-scoped) and
@@ -4386,6 +4457,7 @@ Bumped 9 safe minors:
 | `vue-tsc` | 2.1.10 | 2.2.12 |
 
 Deferred (high regression risk):
+
 - **Lexical 0.38 → 0.44** (6 minors). Editor depends on Lexical;
   needs manual smoke on every composer feature.
 - **Katex 0.16 → 0.17** (major). Math rendering in MessageContent.
@@ -4480,6 +4552,7 @@ find which ones had been depending on the swallow vs which had
 proper handling.
 
 Dispatched three parallel `explore` agents:
+
 1. **audit-stores** — every `invokeCommand` in `src/stores/*.ts`.
 2. **audit-components** — every `invokeCommand` in components +
    `src/lib/`.
@@ -4505,15 +4578,15 @@ Dispatched three parallel `explore` agents:
 
 After manual verification:
 
-| Site | Issue | Fix |
-|---|---|---|
-| `sessionsStore.ts:987` `respondToPending` | optimistic splice + event append before await; no rollback | snapshot entry + index, restore in catch, error toast |
-| `logStore.ts:82` `setLevel` | no try/catch; called via `void` from LogViewer | LogViewer caller catches + toasts |
-| `FilePicker.vue:214` `pickAttachment` | bare `await invokeCommand` | try/catch + toast |
-| `PendingRequestCard.vue:198` `openUrl` | bare `await invokeCommand` | try/catch + toast |
-| `SessionDetailsPanel.vue:113` `revealPath` | `void invokeCommand` (best-effort) | `.catch()` + toast |
-| `SessionHeaderControls.vue:191` `revealPath` | same | same |
-| `LibrarySkillsTab.vue:78` `revealPath` | bare `await invokeCommand` | try/catch + toast |
+| Site                                         | Issue                                                      | Fix                                                   |
+| -------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------- |
+| `sessionsStore.ts:987` `respondToPending`    | optimistic splice + event append before await; no rollback | snapshot entry + index, restore in catch, error toast |
+| `logStore.ts:82` `setLevel`                  | no try/catch; called via `void` from LogViewer             | LogViewer caller catches + toasts                     |
+| `FilePicker.vue:214` `pickAttachment`        | bare `await invokeCommand`                                 | try/catch + toast                                     |
+| `PendingRequestCard.vue:198` `openUrl`       | bare `await invokeCommand`                                 | try/catch + toast                                     |
+| `SessionDetailsPanel.vue:113` `revealPath`   | `void invokeCommand` (best-effort)                         | `.catch()` + toast                                    |
+| `SessionHeaderControls.vue:191` `revealPath` | same                                                       | same                                                  |
+| `LibrarySkillsTab.vue:78` `revealPath`       | bare `await invokeCommand`                                 | try/catch + toast                                     |
 
 ### Decisions
 
@@ -4802,7 +4875,7 @@ type. Settings bumped to v9 to persist `tools.defaultExcluded`.
   `handlePendingToolCall` — there is no runtime mutation hook for
   `availableTools`/`excludedTools`. Per-session state would require
   storing a Set on `SessionRecord` + a settings v10 migration, all to
-  give the user a UI that *still* requires a session restart. Decided
+  give the user a UI that _still_ requires a session restart. Decided
   the honest UX is one global default list + restart hint. If users
   request per-session overrides later, the storage layer adds easily.
 - **MCP per-server tool lists are not surfaced.** `rpc.mcp.list`
@@ -4843,14 +4916,14 @@ serialisation (no settings v9 bump needed). Added Fork button.
 - `src/components/SessionDetailsPanel.vue` (new, ~600 lines)
 - `src/components/SessionHeaderControls.vue` — popover ripped out;
   inline header keeps workspace chip + model + effort + reasoning view
-  + a cog toggle button. Imports cleaned up (no more `Popover`,
-  `InputText`, `SelectButton`, `ToggleSwitch`, `useToastStore`,
-  `SessionMode`).
+  - a cog toggle button. Imports cleaned up (no more `Popover`,
+    `InputText`, `SelectButton`, `ToggleSwitch`, `useToastStore`,
+    `SessionMode`).
 - `src/stores/layoutStore.ts` — new `openSessionDetailsPanel` /
   `toggleSessionDetailsPanel` / `isSessionDetailsOpen` (reactive via
   a new `openDetails: Set<string>` ref maintained by `onDidAddPanel`
-  + `onDidRemovePanel` subs). `addPanel` auto-opens the rail; chat-
-  panel removal also tears down the rail.
+  - `onDidRemovePanel` subs). `addPanel` auto-opens the rail; chat-
+    panel removal also tears down the rail.
 - `src/main.ts` — register `sessionDetails` component.
 - `src/stores/__tests__/layoutStore.addPanel.test.ts` — fake dock
   gets `getEdgeGroup`/`addEdgeGroup` stubs; assertions updated to
@@ -4889,7 +4962,7 @@ plan.md.
 
 User: "figure out first where all the missing stuff is — terminal
 integration, automations, more tools and tons more". Walked every
-plan-*.prompt.md doc end-to-end and compiled `plans/plan-backlog-audit.prompt.md`.
+plan-\*.prompt.md doc end-to-end and compiled `plans/plan-backlog-audit.prompt.md`.
 
 Categorised every documented feature/idea NOT in the current STATUS
 Phase plan into:
@@ -4911,7 +4984,7 @@ Phase plan into:
   - A14 Per-session settings as a right-rail panel (user explicitly asked)
 - **§B — Smaller items** across 10 sub-categories: steering/queueing,
   inline session.ui variants, time-travel, clipboard/notify/lsp/task
-  tools, slash commands, plans editor, memory, self.*, system prompt
+  tools, slash commands, plans editor, memory, self.\*, system prompt
   customize editor, custom request headers, sub-agent streaming toggle,
   MCP OAuth toast, all 14 un-set baseSessionConfig knobs, ~20 CLI
   features worth wiring (`/fork`, `/rewind`, `/undo`, `/diff`,
@@ -4948,15 +5021,15 @@ in MANUAL_TESTS.md still had a live bug. This session went through
 every X mark and either fixed the bug or wrote an automated test
 that proves the existing fix works. **21/21 E2E green in 28 s**.
 
-| Bug | Fix | E2E that locks it |
-|---|---|---|
-| Permission rule doesn't allow follow-up (#87) | The SDK matcher (`aYr` in `app.js`) treats bare identifiers as literal equality and `:*`-suffixed ones as prefix. Our editor was fabricating its own first-token (`git`) — only matched literal `git`. Fix: use the SDK-offered `commandIdentifiers` (which include `git:*`) directly; for custom prefix input, auto-append `:*`. | F12 perm-matcher (asserts `git:*` is sent; custom `npm run` becomes `npm run:*`) |
-| File pill carried relative path `../Resources/version.json` (#378) | Electrobun's `openFileDialog` can return a path relative to the bun process cwd. `pickAttachment` + `pickFolder` now `path.resolve()` the result before returning. | F11 attachment-abspath (stub the dialog with a relative path, assert returned path is absolute + matches the file) |
-| Reveal opens parent for diagnostics + exports (#160 #189 #205) | Earlier fix used `explorer /select,<path>` uniformly, but `/select,<dir>` opens the dir's *parent*. Now `stat`s the path: file → `/select,<file>`; folder → `explorer <folder>`. | F10 reveal (asserts the handler reports isDir correctly for both) |
-| Each permission kind opens the right editor (#74) | Shell summary empty was the previous session's fix (`fullCommandText`); editor template already covered every kind — F13 proves it. | F13 perm-each-kind (7 tests: shell/read/write/memory/mcp/custom-tool/url) |
-| Ring trim observability (#28) | Added "+1k events" + "+10k events" buttons to the Dev Playground header so the user can synthesise large bursts without writing a real autopilot session. | (manual, observable) |
-| CI Tier-2 jobs not running (#178) | `electrobun build` matrix had `needs: check`. When the tier-1 smoke job was transiently flaky, tier-2 was skipped — looked like it wasn't running at all. Dropped the `needs` dependency so tier-2 always runs. | (visible on next push) |
-| `@` doesn't open in real app (#396) | Cascade of the prior cwd bug — picker opened but said "No matches". Now fixed end-to-end by the cwd cascade fix + F2 existing E2E proves it. | (covered by F2) |
+| Bug                                                                | Fix                                                                                                                                                                                                                                                                                                                               | E2E that locks it                                                                                                  |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Permission rule doesn't allow follow-up (#87)                      | The SDK matcher (`aYr` in `app.js`) treats bare identifiers as literal equality and `:*`-suffixed ones as prefix. Our editor was fabricating its own first-token (`git`) — only matched literal `git`. Fix: use the SDK-offered `commandIdentifiers` (which include `git:*`) directly; for custom prefix input, auto-append `:*`. | F12 perm-matcher (asserts `git:*` is sent; custom `npm run` becomes `npm run:*`)                                   |
+| File pill carried relative path `../Resources/version.json` (#378) | Electrobun's `openFileDialog` can return a path relative to the bun process cwd. `pickAttachment` + `pickFolder` now `path.resolve()` the result before returning.                                                                                                                                                                | F11 attachment-abspath (stub the dialog with a relative path, assert returned path is absolute + matches the file) |
+| Reveal opens parent for diagnostics + exports (#160 #189 #205)     | Earlier fix used `explorer /select,<path>` uniformly, but `/select,<dir>` opens the dir's _parent_. Now `stat`s the path: file → `/select,<file>`; folder → `explorer <folder>`.                                                                                                                                                  | F10 reveal (asserts the handler reports isDir correctly for both)                                                  |
+| Each permission kind opens the right editor (#74)                  | Shell summary empty was the previous session's fix (`fullCommandText`); editor template already covered every kind — F13 proves it.                                                                                                                                                                                               | F13 perm-each-kind (7 tests: shell/read/write/memory/mcp/custom-tool/url)                                          |
+| Ring trim observability (#28)                                      | Added "+1k events" + "+10k events" buttons to the Dev Playground header so the user can synthesise large bursts without writing a real autopilot session.                                                                                                                                                                         | (manual, observable)                                                                                               |
+| CI Tier-2 jobs not running (#178)                                  | `electrobun build` matrix had `needs: check`. When the tier-1 smoke job was transiently flaky, tier-2 was skipped — looked like it wasn't running at all. Dropped the `needs` dependency so tier-2 always runs.                                                                                                                   | (visible on next push)                                                                                             |
+| `@` doesn't open in real app (#396)                                | Cascade of the prior cwd bug — picker opened but said "No matches". Now fixed end-to-end by the cwd cascade fix + F2 existing E2E proves it.                                                                                                                                                                                      | (covered by F2)                                                                                                    |
 
 ### SDK matcher source (the smoking gun)
 
@@ -4964,12 +5037,12 @@ that proves the existing fix works. **21/21 E2E green in 28 s**.
 
 ```js
 function aYr(t) {
-  return e => {
-    if (e.kind !== "shell") return false;
+  return (e) => {
+    if (e.kind !== 'shell') return false;
     if (e.argument === null) return true;
-    if (e.argument.endsWith(":*")) {
+    if (e.argument.endsWith(':*')) {
       let r = e.argument.slice(0, -2);
-      return t === r ? true : t.startsWith(r + " ");
+      return t === r ? true : t.startsWith(r + ' ');
     }
     return t === e.argument;
   };
@@ -5021,17 +5094,17 @@ User flagged a backlog of bugs in MANUAL_TESTS.md, with **#1 (cwd
 not persisting)** as MASSIVE. Fixed end-to-end with 10/10 E2E green
 in 16 s wall (was 6 in 12 s):
 
-| Bug | Fix | E2E |
-|---|---|---|
-| cwd resets to exe folder on restart | Cache `workingDirectory` on `Entry` at create+resume. `resume()` now reads `getSessionMetadata` before SDK call and pins the persisted cwd. Dropped `process.cwd()` fallback in `cwdFor` — silent substitution was the root cause. | F6 cwd-persist (spawn bun#1 wsA → kill → bun#2 wsB shared userdata → resume → assert cwd is A) |
-| Export JSON `items: []` | Cascade of cwd bug (no events flowed). | F7 export-items (send, export, parse, assert items contain prompt + reply) |
-| Audit JSONL gone after restart | `initAudit` now reads the tail of each JSONL file into the in-memory `recent` ring on startup. Files always persisted on disk; the ring just wasn't hydrated. | F8 audit-rehydrate |
-| Reveal opens parent folder | Windows: shell out to `explorer.exe /select,<path>` (canonical Windows reveal idiom). Other platforms keep `Utils.showItemInFolder`. | (manual — OS dialog) |
-| Browse… only allowed folders | Native Windows dialogs are file-only OR folder-only — never both. `pickAttachment` now takes `kind: "file" | "directory"`; FilePicker exposes "File…" + "Folder…" buttons. | F9 dir-pill verifies the type+icon round-trip |
-| Permission rule shell summary empty | SDK field is `fullCommandText`, not `command`. Updated `summarizePermission` + `PermissionRuleEditor.shellCommand` to read both. Summary now reads e.g. ``Run `git status` ``. | sessions unit test updated |
-| Reasoning-hidden showed actions bar | Gate `<MessageActions>` for reasoning items on `reasoningVisibility !== "hidden"`. | (trivial v-if gate; verified by manual) |
-| Read/Write rule editor "allow all" only | SDK limit — per-path glob isn't in the rule type union. Added an honest hint in the editor: "Per-path glob rules aren't a Copilot SDK feature." | n/a |
-| Permission rule doesn't allow follow-up | **DEFERRED** — likely SDK matcher semantics issue; needs separate investigation. | n/a |
+| Bug                                     | Fix                                                                                                                                                                                                                                | E2E                                                                                            |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| cwd resets to exe folder on restart     | Cache `workingDirectory` on `Entry` at create+resume. `resume()` now reads `getSessionMetadata` before SDK call and pins the persisted cwd. Dropped `process.cwd()` fallback in `cwdFor` — silent substitution was the root cause. | F6 cwd-persist (spawn bun#1 wsA → kill → bun#2 wsB shared userdata → resume → assert cwd is A) |
+| Export JSON `items: []`                 | Cascade of cwd bug (no events flowed).                                                                                                                                                                                             | F7 export-items (send, export, parse, assert items contain prompt + reply)                     |
+| Audit JSONL gone after restart          | `initAudit` now reads the tail of each JSONL file into the in-memory `recent` ring on startup. Files always persisted on disk; the ring just wasn't hydrated.                                                                      | F8 audit-rehydrate                                                                             |
+| Reveal opens parent folder              | Windows: shell out to `explorer.exe /select,<path>` (canonical Windows reveal idiom). Other platforms keep `Utils.showItemInFolder`.                                                                                               | (manual — OS dialog)                                                                           |
+| Browse… only allowed folders            | Native Windows dialogs are file-only OR folder-only — never both. `pickAttachment` now takes `kind: "file"                                                                                                                         | "directory"`; FilePicker exposes "File…" + "Folder…" buttons.                                  | F9 dir-pill verifies the type+icon round-trip |
+| Permission rule shell summary empty     | SDK field is `fullCommandText`, not `command`. Updated `summarizePermission` + `PermissionRuleEditor.shellCommand` to read both. Summary now reads e.g. ``Run `git status` ``.                                                     | sessions unit test updated                                                                     |
+| Reasoning-hidden showed actions bar     | Gate `<MessageActions>` for reasoning items on `reasoningVisibility !== "hidden"`.                                                                                                                                                 | (trivial v-if gate; verified by manual)                                                        |
+| Read/Write rule editor "allow all" only | SDK limit — per-path glob isn't in the rule type union. Added an honest hint in the editor: "Per-path glob rules aren't a Copilot SDK feature."                                                                                    | n/a                                                                                            |
+| Permission rule doesn't allow follow-up | **DEFERRED** — likely SDK matcher semantics issue; needs separate investigation.                                                                                                                                                   | n/a                                                                                            |
 
 ### Fake-client persistence
 
@@ -5080,12 +5153,12 @@ User said "OK that's a priority right now" after I filed the E2E
 proposal. Built Option A end-to-end in one session:
 
 - **Bun side**: `src-bun/test-server.ts` runs the same `SessionRegistry`
-  + handler surface as production but over `Bun.serve` WebSocket
-  instead of Electrobun's webview FFI. `src-bun/app/fakeClient.ts`
-  is a minimal SDK mock that captures `onPermissionRequest` so tests
-  can drive permission flows via a `__test.triggerPermission` control
-  RPC. `src-bun/app/client.ts` gains a `setClientForTest()` injection
-  seam.
+  - handler surface as production but over `Bun.serve` WebSocket
+    instead of Electrobun's webview FFI. `src-bun/app/fakeClient.ts`
+    is a minimal SDK mock that captures `onPermissionRequest` so tests
+    can drive permission flows via a `__test.triggerPermission` control
+    RPC. `src-bun/app/client.ts` gains a `setClientForTest()` injection
+    seam.
 - **Renderer side**: new `src/ipc/wsBridge.ts` implements `RpcBridge`
   over WebSocket. `src/main.ts` picks it when the page loads with
   `?testBridge=ws://host:port`.
@@ -5251,6 +5324,7 @@ bottom edge.
 ### Fixes
 
 **`src-bun/app/sessions.ts`**:
+
 - `Entry` interface gains `workingDirectory?: string`. Both `create`
   and `resume` paths cache it at registration time.
 - `cwdFor()` reads from the entry first; falls back to
@@ -5259,15 +5333,18 @@ bottom edge.
   `{ includeHidden?, includeIgnored? }` options object.
 
 **`src-bun/app/fileSearch.ts`**:
+
 - `IGNORED_DIRS` and dotfile filters are now two independent gates.
 - Cache key extended to `(cwd, includeHidden, includeIgnored)`.
 - `FileSearchOptions` type exported for callers.
 
 **`src/components/MentionPlugin.vue`**:
+
 - Trigger `punctuation: ""` so any non-whitespace, non-`@` char
   extends the match — path-nav now works.
 
 **`src/components/FilePicker.vue`** (full rewrite of the v1 toolbar):
+
 - Two checkboxes (Hidden / Ignored) with Alt+H / Alt+I shortcuts
   bound at window level (so the editor-has-focus @-trigger case
   works too).
@@ -5488,7 +5565,7 @@ without re-discovering the same sources.
 - Audit doc: `plans/plan-sdk-audit.prompt.md` (~520 lines, 9 sections).
 - STATUS.md "Next concrete steps" rewritten + new historical-log
   bullet pointing at the audit.
-- No code changes this session; the audit *is* the deliverable.
+- No code changes this session; the audit _is_ the deliverable.
 - Methodology + sources listed in §I so the conclusions are
   reproducible.
 
@@ -5497,6 +5574,7 @@ without re-discovering the same sources.
 ## 2026-05-22 — Export conversation + permission audit log (Phase 3 + Phase 4 start)
 
 ### Takeaway
+
 Two clean wins, both ship end-to-end with tests:
 
 **Export conversation.** Per-session gear popover → Export Markdown /
@@ -5518,12 +5596,13 @@ WebView debugging is its own project). Audit logging was a 1-d
 slot that genuinely complements Phase 1's diagnostics work.
 
 ### Detail (export)
+
 - `src/lib/exportConversation.ts` — `formatConversation(input, format)`
-  + `exportFilenameStem`. Markdown ordering: title + metadata + per
-  item (user with attachments, assistant skipping empties, reasoning
-  folded inside `<details>` with encrypted variant, tool with
-  args/output/result/error, system bubbles with icons). pendingRequest
-  items deliberately skipped.
+  - `exportFilenameStem`. Markdown ordering: title + metadata + per
+    item (user with attachments, assistant skipping empties, reasoning
+    folded inside `<details>` with encrypted variant, tool with
+    args/output/result/error, system bubbles with icons). pendingRequest
+    items deliberately skipped.
 - `src-bun/app/exports.ts` — `saveExportFile` with basename+normalize
   sanitisation. New RPC + 1 wire-shape snapshot.
 - `SessionHeaderControls.vue` popover gains the two buttons; dynamic
@@ -5531,6 +5610,7 @@ slot that genuinely complements Phase 1's diagnostics work.
 - 15 markdown + 3 JSON + 3 filename + 3 bun-side tests.
 
 ### Detail (audit)
+
 - `src-bun/app/audit.ts` — append-only JSONL writers split by category.
   Per-process ring buffer (500) + subscriber API for live fan-out;
   pattern mirrors `src-bun/app/logging.ts`. `recordPermission` +
@@ -5549,6 +5629,7 @@ slot that genuinely complements Phase 1's diagnostics work.
   snapshot.
 
 ### Decision pivots logged
+
 - **Image generation deferred.** SDK accepts `responseFormat` +
   `imageOptions` on session.send, but the bundled CLI's `app.js` has
   zero references to either, no model in the catalog exposes a
@@ -5569,6 +5650,7 @@ slot that genuinely complements Phase 1's diagnostics work.
   Stays in Phase 4.
 
 ### Receipts
+
 - `src/lib/exportConversation.ts`, `src-bun/app/exports.ts`,
   `src-bun/app/audit.ts`, `src/stores/auditStore.ts` (new).
 - `src/lib/__tests__/exportConversation.test.ts` (15),
@@ -5583,6 +5665,7 @@ slot that genuinely complements Phase 1's diagnostics work.
 ## 2026-05-21 — Phase 1: observability tail (log viewer + redaction + diagnostics + CI matrix)
 
 ### Takeaway
+
 Closed every open M1 observability item in one chunk: in-app log viewer
 (`LogViewer.vue`) wired to a live `logEvent` webview message, runtime
 log-level toggle that mutates the bun side without restart, redaction
@@ -5594,6 +5677,7 @@ finally a cross-platform `electrobun build` CI matrix (Ubuntu / macOS /
 Windows, currently `continue-on-error` until it's stable).
 
 ### Detail
+
 - **Redaction (`src-bun/app/redact.ts`).** Two passes per object:
   sensitive keys (`token`/`secret`/`password`/`authorization`/`apiKey`/…)
   → `***`; content keys (`prompt`/`content`/`text`/`data`/`reasoningText`/
@@ -5626,7 +5710,7 @@ Windows, currently `continue-on-error` until it's stable).
   indicator appears in the count row.
 - **CI matrix.** Tier-1 stays Linux-only and required (lint + test +
   vite + smoke). New Tier-2 `build-matrix` job runs `bunx electrobun
-  build` on `ubuntu-latest` + `macos-latest` + `windows-latest`. Marked
+build` on `ubuntu-latest` + `macos-latest` + `windows-latest`. Marked
   `continue-on-error: true` so a transient native-toolchain failure
   doesn't block merges; flip to required once it has been green for a
   week.
@@ -5634,6 +5718,7 @@ Windows, currently `continue-on-error` until it's stable).
   Mirrored in `src/ipc/types.ts` + the formatter in `src/ipc/invoke.ts`.
 
 ### Receipts
+
 - `src-bun/app/redact.ts`, `src-bun/app/logging.ts` (rewritten),
   `src-bun/app/diagnostics.ts` (new).
 - `src/stores/logStore.ts`, `src/components/LogViewer.vue` (new).
@@ -5644,6 +5729,7 @@ Windows, currently `continue-on-error` until it's stable).
 - 325 `bun test` pass (was 308), lint clean, smoke green prod + hmr.
 
 ### Open question
+
 Should the diagnostics bundle be a real ZIP rather than a directory?
 Pragmatic v1 just creates the directory and reveals it — the user has
 to zip it themselves before uploading to a bug report. If this proves
@@ -5655,6 +5741,7 @@ primitives.
 ## 2026-05-21 — Audit, ARCHITECTURE.md, anti-laziness AGENTS rules
 
 ### Takeaway
+
 Every plan doc was carrying a "post-Electrobun port" header note dating back to
 2026-05-17 and the M1 backlog in `STATUS.md` was stale. Two-thirds of the
 "M1 still open" items actually shipped weeks ago. Auditing the codebase
@@ -5667,6 +5754,7 @@ running log going forward; AGENTS.md gained hard anti-laziness rules
 (below).
 
 ### Detail
+
 - Audited every component / store / RPC against `plans/plan-roadmap.prompt.md`.
   Wrote the live state into `ARCHITECTURE.md` and re-organised the
   open-backlog list in `STATUS.md` to reflect what's actually missing.
@@ -5678,6 +5766,7 @@ running log going forward; AGENTS.md gained hard anti-laziness rules
   dark mode) so first-time visitors don't land on the M0 description.
 
 ### Receipts
+
 - `ARCHITECTURE.md` (new) — current module map + invariants + SDK gotchas.
 - `DEVLOG.md` (new, this file).
 - `AGENTS.md` — Anti-laziness rules section added.
@@ -5689,6 +5778,7 @@ running log going forward; AGENTS.md gained hard anti-laziness rules
 ## 2026-05-21 — P0/P1 sweep: bounded events, reasoning_opaque, permission rules, session settings
 
 ### Takeaway
+
 Four backlog items shipped end-to-end with tests. The
 `reasoning_opaque`-displays-empty regression that I had previously patched
 with a "Reasoned privately" placeholder was actually a wire-protocol bug:
@@ -5697,6 +5787,7 @@ reasoningOpaque, encryptedContent}`, NOT on `assistant.reasoning_delta`.
 Found this by reading `node_modules/@github/copilot/app.js:4487`.
 
 ### Detail
+
 1. **Bounded `record.events`** (`38d42ca`). Ring-buffer trim at
    `MAX_EVENTS_PER_SESSION = 5000`. Consumers track absolute progress
    (`droppedEventCount + events.length`) instead of array indices so trims
@@ -5722,6 +5813,7 @@ Found this by reading `node_modules/@github/copilot/app.js:4487`.
    in the SDK.
 
 ### Receipts
+
 - Commits `38d42ca`, `0812f9a`, `b015d68`, `a0a3886`.
 - Tests: 308 pass (up from 297 at session start).
 - Memory: "copilot CLI reasoning events" (DecoratorNode rule already stored).

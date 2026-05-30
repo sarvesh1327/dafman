@@ -256,6 +256,9 @@ describe('sessionCommands', () => {
             { name: 'planner', displayName: null, description: '', source: 'user' },
           ];
         }
+        if (name === 'listAgentFiles') {
+          return [];
+        }
         return 'ok';
       },
       onSessionEvent: () => () => {},
@@ -275,5 +278,36 @@ describe('sessionCommands', () => {
     expect(await runLocalSlashCommand('s1', '/agent unknown')).toBe(true);
     expect(calls.some((c) => c.name === 'selectAgent')).toBe(false);
     expect(calls.some((c) => c.name === 'listAgents')).toBe(true);
+  });
+
+  test('/agent <name> surfaces rejected filesystem agents on SDK miss', async () => {
+    const calls: Array<{ name: string; args: unknown }> = [];
+    setRpcBridge({
+      async request(name, args) {
+        calls.push({ name, args });
+        if (name === 'listAgents') return [];
+        if (name === 'listAgentFiles') {
+          return [
+            {
+              scope: 'project',
+              name: 'broken',
+              path: 'C:\\repo\\.github\\agents\\broken.agent.md',
+              canonical: true,
+              loadStatus: 'rejected',
+              loadMessage: 'broken.agent.md: mcp-servers.github.tools: Required',
+            },
+          ];
+        }
+        return 'ok';
+      },
+      onSessionEvent: () => () => {},
+      onPendingRequest: () => () => {},
+      onLogEvent: () => () => {},
+      onAuditEvent: () => () => {},
+    } as RpcBridge);
+
+    expect(await runLocalSlashCommand('s1', '/agent broken')).toBe(true);
+    expect(calls.some((c) => c.name === 'selectAgent')).toBe(false);
+    expect(calls.some((c) => c.name === 'listAgentFiles')).toBe(true);
   });
 });

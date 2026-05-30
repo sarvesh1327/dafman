@@ -31,6 +31,9 @@ export interface AgentFileEntry {
   name: string;
   path: string;
   canonical: boolean;
+  loadStatus: 'loaded' | 'rejected' | 'unknown';
+  loadMessage?: string;
+  loadWarnings?: string[];
 }
 
 export class SessionAgentsService {
@@ -76,7 +79,7 @@ export class SessionAgentsService {
     const entry = this.ctx.getEntry(sessionId);
 
     return this.ctx.wrapSdk(async () => {
-      const result = (await entry.session.rpc.agent.select({ name })) as {
+      let result: {
         agent?: {
           name?: unknown;
           displayName?: unknown;
@@ -84,6 +87,18 @@ export class SessionAgentsService {
           path?: unknown;
         };
       };
+
+      try {
+        result = await entry.session.rpc.agent.select({ name });
+      } catch (err) {
+        const rejected = await this.findRejectedFile(sessionId, name);
+
+        if (rejected) {
+          throw AppError.sdk(rejectedAgentMessage(rejected));
+        }
+
+        throw err;
+      }
 
       if (!result.agent || typeof result.agent.name !== 'string') {
         throw AppError.sdk('selectAgent: SDK returned no agent');
@@ -145,13 +160,17 @@ export class SessionAgentsService {
 
     if (entry.workingDirectory) opts.workingDirectory = entry.workingDirectory;
 
-    return listAgentFiles(opts);
+    const files = await listAgentFiles(opts);
+
+    return this.withSdkLoadState(sessionId, files);
   }
 
   /// User-scope only — for the Library tab when no session is
   /// open. Doesn't require sessionId / workingDirectory.
   async listFilesGlobal(): Promise<AgentFileEntry[]> {
-    return listAgentFiles({ includeUser: true, includeProject: false });
+    const files = await listAgentFiles({ includeUser: true, includeProject: false });
+
+    return files.map((file) => ({ ...file, loadStatus: 'unknown' }));
   }
 
   async writeFile(
@@ -234,4 +253,107 @@ export class SessionAgentsService {
 
     return removed;
   }
+
+  private async findRejectedFile(
+    sessionId: string,
+    name: string,
+  ): Promise<AgentFileEntry | undefined> {
+    const files = await this.listFiles(sessionId);
+    const wanted = name.toLowerCase();
+
+    return files.find(
+      (file) => file.name.toLowerCase() === wanted && file.loadStatus === 'rejected',
+    );
+  }
+
+  private async withSdkLoadState(
+    sessionId: string,
+    files: Array<Omit<AgentFileEntry, 'loadStatus' | 'loadMessage' | 'loadWarnings'>>,
+  ): Promise<AgentFileEntry[]> {
+    let loadedAgents: AgentInfo[] = [];
+
+    try {
+      loadedAgents = await this.list(sessionId);
+    } catch (err) {
+      log.warn('agent.list before annotating listAgentFiles failed', {
+        sessionId,
+        error: toErrorMessage(err),
+      });
+
+      return files.map((file) => ({ ...file, loadStatus: 'unknown' }));
+    }
+
+    const loadedPaths = new Set(
+      loadedAgents
+        .map((agent) => (agent.path ? normalizePathKey(agent.path) : null))
+        .filter((path): path is string => path !== null),
+    );
+    const loadedNames = new Set(loadedAgents.map((agent) => agent.name.toLowerCase()));
+    const diagnostics = this.ctx.getAgentLoadDiagnostics?.(sessionId);
+    const hasLoadedAgents = loadedAgents.length > 0;
+
+    return files.map((file) => {
+      const pathKey = normalizePathKey(file.path);
+      const warnings = matchingDiagnostics(file, diagnostics?.warnings ?? []);
+      const loadWarnings = warnings.length > 0 ? warnings : undefined;
+      const loaded =
+        loadedPaths.has(pathKey) ||
+        (loadedPaths.size === 0 && loadedNames.has(file.name.toLowerCase()));
+
+      if (loaded) {
+        return { ...file, loadStatus: 'loaded', ...(loadWarnings ? { loadWarnings } : {}) };
+      }
+
+      const errors = matchingDiagnostics(file, diagnostics?.errors ?? []);
+
+      if (!hasLoadedAgents && errors.length === 0) {
+        return { ...file, loadStatus: 'unknown', ...(loadWarnings ? { loadWarnings } : {}) };
+      }
+
+      const loadMessage =
+        errors[0] ??
+        `The Copilot SDK did not load this agent file. Check ${file.path} for malformed frontmatter, then refresh agents.`;
+
+      return {
+        ...file,
+        loadStatus: 'rejected',
+        loadMessage,
+        ...(loadWarnings ? { loadWarnings } : {}),
+      };
+    });
+  }
+}
+
+function normalizePathKey(path: string): string {
+  return path.replace(/\\/g, '/').toLowerCase();
+}
+
+function matchingDiagnostics(
+  file: { name: string; path: string },
+  diagnostics: string[],
+): string[] {
+  const filePath = normalizePathKey(file.path);
+  const fileName = filePath.split('/').at(-1) ?? `${file.name}.agent.md`;
+  const name = file.name.toLowerCase();
+  const namePattern = new RegExp(`(^|[^a-z0-9-])${escapeRegExp(name)}([^a-z0-9-]|$)`);
+
+  const pathMatches = diagnostics.filter((diagnostic) => {
+    const normalized = normalizePathKey(diagnostic);
+
+    return normalized.includes(filePath) || normalized.includes(fileName);
+  });
+
+  if (pathMatches.length > 0) return pathMatches;
+
+  return diagnostics.filter((diagnostic) => namePattern.test(normalizePathKey(diagnostic)));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function rejectedAgentMessage(file: AgentFileEntry): string {
+  const reason = file.loadMessage ?? 'the Copilot SDK rejected its frontmatter';
+
+  return `Custom agent "${file.name}" failed to load: ${reason} Fix ${file.path}, then refresh agents.`;
 }

@@ -12,6 +12,7 @@ const entries = [
     path: 'C:\\repo\\.github\\agents\\reviewer.agent.md',
     scope: 'project',
     canonical: true,
+    loadStatus: 'loaded',
   },
 ] satisfies AgentFileEntry[];
 
@@ -72,5 +73,34 @@ describe('LibraryAgentsTabSection select loading affordance (#78)', () => {
     await sleep(DELAY_MS);
 
     expect(selectButton(utils.container).classList.contains('p-button-loading')).toBe(true);
+  });
+
+  test('flags SDK-rejected agents instead of rendering a normal select action', () => {
+    const utils = render(LibraryAgentsTabSection, {
+      props: {
+        title: 'Project',
+        keyPrefix: 'project',
+        entries: [
+          {
+            name: 'broken',
+            path: 'C:\\repo\\.github\\agents\\broken.agent.md',
+            scope: 'project',
+            canonical: true,
+            loadStatus: 'rejected',
+            loadMessage: 'broken.agent.md: custom agent markdown frontmatter is malformed',
+          },
+        ] satisfies AgentFileEntry[],
+        currentAgentName: null,
+        agentBusyName: null,
+        activeSession: true,
+      },
+      global: { plugins: [PrimeVue] },
+    });
+
+    expect(utils.getByText('SDK rejected')).toBeTruthy();
+    expect(utils.getByText('Fix')).toBeTruthy();
+    expect(
+      utils.getByText('broken.agent.md: custom agent markdown frontmatter is malformed'),
+    ).toBeTruthy();
   });
 });

@@ -13,10 +13,13 @@
 // agents unambiguously, and so we don't conflict with arbitrary
 // markdown the user might have in the same directory.
 //
-// **Edit safety (added 2026-05-27).** The SDK accepts unknown
-// frontmatter keys we don't model (`github.toolsets`, `mcp-servers`,
-// plugin keys). Editing them via our minimal serializer would silently
-// strip them. We solve this WITHOUT a YAML round-trip library:
+// **Edit safety (added 2026-05-27, corrected 2026-05-31).** The SDK
+// strips genuinely-unknown top-level frontmatter keys with a warning,
+// but `github` and `mcp-servers` are modeled strictly (wrong shape
+// rejects the whole agent file). Dafman's `displayName` is currently
+// unknown to the SDK and is stripped + warned. Editing any key outside
+// our minimal model via our serializer would silently strip it. We
+// solve this WITHOUT a YAML round-trip library:
 // `readAgentForEdit` parses known keys into the spec subset AND
 // captures unknown keys as a verbatim byte-for-byte tail; `writeAgent`
 // appends that tail back after our own frontmatter emit. So Edit

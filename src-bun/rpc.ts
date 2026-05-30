@@ -382,6 +382,14 @@ export interface AgentFileEntry {
   name: string;
   path: string;
   canonical: boolean;
+  /// SDK load state for this file in the active session. `unknown`
+  /// means no session-scoped SDK diagnostics are available (global
+  /// Library view or SDK list failure).
+  loadStatus: 'loaded' | 'rejected' | 'unknown';
+  /// Actionable SDK/frontmatter validation message when `rejected`.
+  loadMessage?: string;
+  /// Non-fatal SDK warnings, such as ignored unknown frontmatter keys.
+  loadWarnings?: string[];
 }
 
 export type InstructionScope = 'global' | 'project';

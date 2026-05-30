@@ -9,7 +9,10 @@
         v-for="entry in entries"
         :key="`${keyPrefix}:${entry.name}`"
         class="agent-row"
-        :class="{ 'agent-row-selected': currentAgentName === entry.name }"
+        :class="{
+          'agent-row-selected': currentAgentName === entry.name,
+          'agent-row-rejected': entry.loadStatus === 'rejected',
+        }"
       >
         <div class="agent-line">
           <span class="agent-name">{{ entry.name }}</span>
@@ -19,6 +22,20 @@
             title="File ends with .md (not .agent.md)"
           >
             .md
+          </small>
+          <small
+            v-if="entry.loadStatus === 'rejected'"
+            class="error-tag"
+            :title="entry.loadMessage ?? 'The SDK rejected this agent file'"
+          >
+            SDK rejected
+          </small>
+          <small
+            v-else-if="entry.loadWarnings?.length"
+            class="warn-tag"
+            :title="entry.loadWarnings.join('\n')"
+          >
+            warning
           </small>
           <span
             v-if="currentAgentName === entry.name"
@@ -33,6 +50,16 @@
           :title="entry.path"
         >
           {{ entry.path }}
+        </div>
+        <div
+          v-if="entry.loadStatus === 'rejected'"
+          class="agent-load-message"
+          :title="entry.loadMessage"
+        >
+          {{
+            entry.loadMessage ??
+            'The Copilot SDK did not load this file. Fix the frontmatter and refresh agents.'
+          }}
         </div>
         <div class="agent-actions">
           <Button
@@ -50,9 +77,18 @@
             size="small"
             :loading="visibleAgentBusyName === entry.name"
             :disabled="!activeSession || !!agentBusyName"
-            label="Select"
-            :aria-label="`Select agent ${entry.name}`"
-            @click="$emit('select', entry.name)"
+            :severity="entry.loadStatus === 'rejected' ? 'danger' : undefined"
+            :label="entry.loadStatus === 'rejected' ? 'Fix' : 'Select'"
+            :aria-label="
+              entry.loadStatus === 'rejected'
+                ? `Show load error for agent ${entry.name}`
+                : `Select agent ${entry.name}`
+            "
+            @click="
+              entry.loadStatus === 'rejected'
+                ? $emit('selectRejected', entry)
+                : $emit('select', entry.name)
+            "
           />
           <Button
             size="small"
@@ -124,7 +160,7 @@ watch(
 defineEmits<{
   (e: 'select' | 'reveal', payload: string): void;
   (e: 'deselect'): void;
-  (e: 'edit' | 'delete', entry: AgentFileEntry): void;
+  (e: 'selectRejected' | 'edit' | 'delete', entry: AgentFileEntry): void;
 }>();
 </script>
 
@@ -181,6 +217,11 @@ defineEmits<{
   background: color-mix(in srgb, var(--p-primary-color) 8%, transparent);
 }
 
+.agent-row-rejected {
+  border-left-color: var(--p-red-500, #ef4444);
+  background: color-mix(in srgb, var(--p-red-500, #ef4444) 8%, transparent);
+}
+
 .agent-current-chip {
   font-size: 0.62rem;
   text-transform: uppercase;
@@ -215,6 +256,15 @@ defineEmits<{
   border-radius: 0.2rem;
 }
 
+.error-tag {
+  text-transform: uppercase;
+  font-size: 0.55rem;
+  padding: 0.05rem 0.3rem;
+  background: color-mix(in srgb, var(--p-red-500, #ef4444) 16%, transparent);
+  color: var(--p-red-500, #ef4444);
+  border-radius: 0.2rem;
+}
+
 .agent-path {
   grid-row: 2;
   grid-column: 1 / 2;
@@ -226,8 +276,19 @@ defineEmits<{
   min-width: 0;
 }
 
+.agent-load-message {
+  grid-row: 3;
+  grid-column: 1 / 2;
+  font-size: 0.68rem;
+  color: var(--p-red-500, #ef4444);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 .agent-actions {
-  grid-row: 1 / 3;
+  grid-row: 1 / 4;
   grid-column: 2;
   display: flex;
   gap: 0.2rem;

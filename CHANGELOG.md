@@ -6,6 +6,9 @@ All notable changes to Dafman are documented here. Format is based on [Keep a Ch
 ### Fixed (#93 — 2026-05-31)
 - **Library Agents / Skills / MCP session-switch reloads no longer flash a Loading indicator when the refresh resolves instantly.** The shared library list loading flag now keeps stale content visible during cached/fast reloads and only exposes the loading affordance after the same short delay used by the Agents Select affordance, while genuinely slow reloads still show feedback.
 
+### Fixed (#81 — 2026-05-31)
+- **Library → Agents now flags custom agent files the Copilot SDK rejected instead of showing them as normal selectable rows.** Session-scoped filesystem rows are annotated from the SDK-loaded agent set plus `session.custom_agents_updated` diagnostics, rejected rows show the validation message, and `/agent <name>` now reports the load failure instead of a bare "not found" toast.
+
 ### Fixed (#83 — 2026-05-30)
 - **Messages with two or more mermaid diagrams now render each in its own block.** Previously the first block painted all the diagrams overlapping each other and the later blocks came out empty. `MermaidBlock.vue` built its mermaid render id as `` `mermaid-${Date.now()}-${++counter}` ``, but `counter` was declared inside `<script setup>` — i.e. per component instance — so it was always `1`, and `Date.now()` ties for diagrams mounted in the same tick. Two diagrams therefore shared an identical id and mermaid rendered both into the same element. Fix: use Vue 3.5 `useId()` (app-scoped unique) for the render id. Regression test in `src/components/shared/__tests__/MermaidBlock.test.ts` mounts two blocks in one app with a frozen clock and asserts mermaid receives distinct ids (fails on the pre-fix component, passes after).
 

@@ -154,6 +154,21 @@ export const SESSION_COMMANDS: SessionCommand[] = [
         const match = agents.find((a) => a.name.toLowerCase() === name.toLowerCase());
 
         if (!match) {
+          const files = await invokeCommand('listAgentFiles', { sessionId });
+          const rejected = files.find(
+            (file) =>
+              file.name.toLowerCase() === name.toLowerCase() && file.loadStatus === 'rejected',
+          );
+
+          if (rejected) {
+            useToastStore().error(
+              `Agent "${rejected.name}" failed to load`,
+              rejected.loadMessage ?? `Fix ${rejected.path}, then refresh agents.`,
+            );
+
+            return;
+          }
+
           const available =
             agents
               .map((a) => a.name)

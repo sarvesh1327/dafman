@@ -419,6 +419,10 @@ describe('IPC wire contracts', () => {
         name: 'dropped',
         path: 'C:\\repo\\dafman\\.github\\agents\\dropped.agent.md',
         canonical: true,
+        loadStatus: 'rejected',
+        loadMessage:
+          'dropped.agent.md: custom agent markdown frontmatter is malformed: mcp-servers.github.tools: Required',
+        loadWarnings: ['dropped.agent.md: unknown field ignored: displayName'],
       },
     ];
     expect(sample).toMatchSnapshot();

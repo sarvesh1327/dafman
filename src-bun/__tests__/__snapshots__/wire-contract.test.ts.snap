@@ -517,6 +517,11 @@ exports[`IPC wire contracts listAgentFiles response shape 1`] = `
 [
   {
     "canonical": true,
+    "loadMessage": "dropped.agent.md: custom agent markdown frontmatter is malformed: mcp-servers.github.tools: Required",
+    "loadStatus": "rejected",
+    "loadWarnings": [
+      "dropped.agent.md: unknown field ignored: displayName",
+    ],
     "name": "dropped",
     "path": "C:\\repo\\dafman\\.github\\agents\\dropped.agent.md",
     "scope": "project",
