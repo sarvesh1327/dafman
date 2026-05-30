@@ -49,6 +49,27 @@ event type — reused the `AuditEntry` union (kept `src-bun/rpc.ts` ↔
 `bun test` (743 pass), `bunx vite build` — all green. smoke/e2e/electrobun
 deferred to CI per the sibling-agent port constraint.
 
+**Follow-up — CI smoke caught what the port-free gates couldn't.** The first
+push failed `e2e/jobs-spinner-probe.pwtest.ts` (Jobs panel spinner never
+rendered) on both prod + hmr. Root cause: I subscribed to `onAuditEvent` at
+`defineStore('jobs')` setup. The boot/jobs smoke harness boots against a minimal
+RPC stub (`__DAFMAN_TEST_RPC__` in the probe) that only implements `request` +
+`on` — it omits the `on*` channel methods. The deferred channel's `subscribe`
+calls `bridge.onAuditEvent(listener)` eagerly when a bridge is already set, so
+`bridge.onAuditEvent` being `undefined` threw a `TypeError` → `useJobsStore()`
+setup threw → the JobsPanel never mounted → `.job-main .job-spinner` timed out.
+The other event-subscribing stores survive the stub because they subscribe
+**lazily** (`sessionsStore.ensureSubscription()` fires from `createSession`,
+`auditStore.ensureInitialised()` from LogViewer mount) — the boot smoke never
+triggers those code paths. Fix: match that pattern — `jobsStore` now wires the
+audit listener via `ensureAuditSubscription()` called from `startAutopilot`
+(the only action that creates the autopilot jobs the enrichment targets), not at
+setup. Added a regression test asserting `useJobsStore()` does NOT touch the
+audit channel at setup, and locally ran `bunx playwright test
+e2e/jobs-spinner-probe.pwtest.ts e2e/smoke.pwtest.ts` green (4/4) before
+re-pushing. Lesson re-learned: a renderer-surface change is not done until smoke
+runs (rules 1/4a).
+
 
 
 **Takeaway.** Landed the reviewed dogfood-fix backlog as a sequential merge

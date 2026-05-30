@@ -159,6 +159,25 @@ describe('jobsStore', () => {
     expect(store.jobs[0]?.status).toBe('completed');
   });
 
+  test('does not subscribe to the audit channel at store setup (lazy — guards boot smoke)', () => {
+    let auditSubscriptions = 0;
+    const { bridge } = makeBridge();
+    // Count how many times the audit channel is wired.
+    const origOnAudit = bridge.onAuditEvent;
+    bridge.onAuditEvent = (listener) => {
+      auditSubscriptions += 1;
+      return origOnAudit(listener);
+    };
+    setRpcBridge(bridge);
+
+    // Merely instantiating the store must NOT touch the audit channel —
+    // the boot smoke harness boots with a minimal RPC stub that omits
+    // the on* channel methods, so an eager subscription crashes it.
+    useJobsStore();
+
+    expect(auditSubscriptions).toBe(0);
+  });
+
   test('toolFailure audit entry surfaces SDK error context on the active autopilot job', async () => {
     const { bridge, emitAudit } = makeBridge({
       listJobs: async () => [],
