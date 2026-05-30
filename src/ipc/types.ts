@@ -976,6 +976,15 @@ export type AuditEntry =
       toolCallId?: string;
       argKeys?: string[];
       argKeyCount?: number;
+    }
+  | {
+      ts: string;
+      kind: 'toolFailure';
+      sessionId: string;
+      toolName: string;
+      error: string;
+      argKeys?: string[];
+      argKeyCount?: number;
     };
 
 export type CommandName = keyof CommandMap;

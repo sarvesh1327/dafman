@@ -24,7 +24,10 @@
 - [Sprint E — Light mode visual audit](https://github.com/AsafMah/dafman/milestone/4) (2 issues)
 - [M1 — Features (post-sprint backlog)](https://github.com/AsafMah/dafman/milestone/5) (9 issues)
 
-**Recently fixed:** #94 — Library Agents Refresh now reloads the Copilot SDK
+**Recently fixed:** #36 — failed tool executions are now observed via the SDK
+`postToolUseFailure` hook (beta.9), recorded as a `toolFailure` audit entry and
+surfaced in the Activity log + Jobs panel with the SDK-provided error context.
+2026-05-31. #94 — Library Agents Refresh now reloads the Copilot SDK
 (not just the filesystem listing); mount + session-switch stay list-only so only
 the explicit Refresh action triggers an SDK reload. 2026-05-30. #97 — discovered
 MCP servers now key off the focused workspace (`lastFocusedSessionId`) instead of

@@ -70,7 +70,35 @@ walked by the user. After dogfooding, items move to verified (then to
 section is verified) or get a GitHub issue filed (with label
 `manual-test-fail`) and removed from this file.
 
-### Issue #76 — Fenced CodeMirror code blocks follow app theme (2026-05-30)
+### Issue #36 — `postToolUseFailure` hook → Activity log + Jobs panel (2026-05-31)
+
+#### 36.1 - A failed tool execution appears in the Activity log with the SDK error.
+
+- [ ] result: 
+- **Steps:** `bun run dev`, open a session, and trigger a tool that fails (e.g.
+  ask the agent to `str_replace` text that does not exist in a file, or run a
+  shell command that exits non-zero). Open Diagnostics → Activity (the LogViewer
+  audit tab).
+- **Expected:** a red-tinted `TOOLFAILURE` row appears reading
+  `<toolName> failed · <error message>`, where the error text is the SDK's
+  failure message (not just "tool errored"). No raw argument VALUES appear.
+- **Why not automated:** needs a real CLI tool execution + the SDK host firing
+  the `failure` result; the renderer's audit-tab paint is visual.
+
+#### 36.2 - A tool failure during an Autopilot run surfaces on the Jobs panel.
+
+- [ ] result: 
+- **Steps:** open the Jobs panel, Start Autopilot with a goal that will make the
+  agent run a tool that fails. Watch the active Autopilot job row while the tool
+  fails.
+- **Expected:** the active job's latest-response line briefly shows
+  `⚠ <toolName> failed: <error>` (the SDK error context) while the job is still
+  running; it returns to the normal completion text once the turn completes. The
+  Activity-log entry (36.1) persists regardless.
+- **Why not automated:** depends on live Autopilot timing + a real failing tool;
+  the transient job-row text is a visual/timing assertion.
+
+
 
 #### 76.1 - Transcript fenced code blocks switch between light and dark CodeMirror themes.
 

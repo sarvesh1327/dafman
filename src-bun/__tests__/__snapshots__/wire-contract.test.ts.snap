@@ -818,7 +818,7 @@ exports[`IPC wire contracts — diagnostics saveExportFile result shape 1`] = `
 }
 `;
 
-exports[`IPC wire contracts — diagnostics AuditEntry permission + url + mcp shapes 1`] = `
+exports[`IPC wire contracts — diagnostics AuditEntry permission + url + mcp + toolFailure shapes 1`] = `
 [
   {
     "decision": "approveOnce",
@@ -857,6 +857,18 @@ exports[`IPC wire contracts — diagnostics AuditEntry permission + url + mcp sh
     "toolCallId": "tc-1",
     "toolName": "create_issue",
     "ts": "2026-05-22T00:00:03.000Z",
+  },
+  {
+    "argKeyCount": 2,
+    "argKeys": [
+      "command",
+      "path",
+    ],
+    "error": "No replacement performed: old_str not found",
+    "kind": "toolFailure",
+    "sessionId": "sess-1",
+    "toolName": "str_replace_editor",
+    "ts": "2026-05-22T00:00:04.000Z",
   },
 ]
 `;

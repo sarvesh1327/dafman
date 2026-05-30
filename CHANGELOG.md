@@ -3,6 +3,9 @@ All notable changes to Dafman are documented here. Format is based on [Keep a Ch
 
 ## [Unreleased]
 
+### Added (#36 — 2026-05-31)
+- **Failed tool executions are now observed through the SDK's `postToolUseFailure` hook and surfaced in the Activity log + Jobs panel.** The backend wires `onPostToolUseFailure` (under `SessionConfig.hooks`, beta.9) to record a structured `toolFailure` audit entry carrying the SDK-provided `error` message (argument key NAMES only — never values), which flows through the existing audit pipeline into the Diagnostics → Activity view. The Jobs panel surfaces that SDK error context on the matching active Autopilot job's latest-response line, so a tool failure shows the real failure reason rather than only our parsed stream event. Backend coverage in `sessionConfigBuilder.test.ts` (hook records the audit entry, redacts values, never throws) and `jobsStore.test.ts` (audit entry enriches the active job; cross-session entries are ignored); wire shape locked in `wire-contract.test.ts`.
+
 ### Fixed (#83 — 2026-05-30)
 - **Messages with two or more mermaid diagrams now render each in its own block.** Previously the first block painted all the diagrams overlapping each other and the later blocks came out empty. `MermaidBlock.vue` built its mermaid render id as `` `mermaid-${Date.now()}-${++counter}` ``, but `counter` was declared inside `<script setup>` — i.e. per component instance — so it was always `1`, and `Date.now()` ties for diagrams mounted in the same tick. Two diagrams therefore shared an identical id and mermaid rendered both into the same element. Fix: use Vue 3.5 `useId()` (app-scoped unique) for the render id. Regression test in `src/components/shared/__tests__/MermaidBlock.test.ts` mounts two blocks in one app with a frozen clock and asserts mermaid receives distinct ids (fails on the pre-fix component, passes after).
 

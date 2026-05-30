@@ -10,6 +10,7 @@
 //   audit/urls.jsonl          — every openUrl + decision
 //   audit/commands.jsonl      — direct user-initiated shell commands
 //   audit/mcp.jsonl           — every MCP tool call (server/tool/argKeys)
+//   audit/toolFailures.jsonl  — every failed tool execution (tool/error)
 //
 // Schema: each line a JSON object with `ts` (ISO8601), `kind`, and
 // kind-specific fields. Stable; future readers (an in-app Activity
@@ -91,11 +92,34 @@ export interface McpToolCallAuditEntry {
   argKeyCount?: number;
 }
 
+/// One failed tool execution, recorded by the SDK `onPostToolUseFailure`
+/// hook (beta.9). The hook fires only for tool results whose
+/// `resultType` is `"failure"` and carries the SDK's stringified
+/// `error` message — the structured failure context, distinct from the
+/// transcript event we parse from the stream. Like the mcp entry it
+/// records argument key NAMES only (`argKeys`, capped) — never the raw
+/// (possibly secret-bearing) argument values.
+export interface ToolFailureAuditEntry {
+  ts: string;
+  kind: 'toolFailure';
+  sessionId: string;
+  toolName: string;
+  /// SDK-provided failure message (the `error` field of the
+  /// `PostToolUseFailureHookInput`).
+  error: string;
+  /// Top-level own-enumerable string keys of the tool arguments,
+  /// capped at `ARG_KEYS_CAP`. Key NAMES only — never values.
+  argKeys?: string[];
+  /// Total key count before the `ARG_KEYS_CAP` truncation.
+  argKeyCount?: number;
+}
+
 export type AuditEntry =
   | PermissionAuditEntry
   | UrlAuditEntry
   | CommandAuditEntry
-  | McpToolCallAuditEntry;
+  | McpToolCallAuditEntry
+  | ToolFailureAuditEntry;
 
 interface AuditConfig {
   dir: string | null;
@@ -123,6 +147,7 @@ const AUDIT_FILES: Record<AuditEntry['kind'], string> = {
   url: 'urls.jsonl',
   command: 'commands.jsonl',
   mcp: 'mcp.jsonl',
+  toolFailure: 'toolFailures.jsonl',
 };
 
 export interface InitAuditOptions {
@@ -168,7 +193,13 @@ async function hydrateRecent(): Promise<void> {
 
   if (!dir) return;
 
-  const files = ['permissions.jsonl', 'urls.jsonl', 'commands.jsonl', 'mcp.jsonl'];
+  const files = [
+    'permissions.jsonl',
+    'urls.jsonl',
+    'commands.jsonl',
+    'mcp.jsonl',
+    'toolFailures.jsonl',
+  ];
   const collected: AuditEntry[] = [];
 
   for (const name of files) {
@@ -276,6 +307,15 @@ export function recordMcpToolCall(
   entry: Omit<McpToolCallAuditEntry, 'ts' | 'kind'>,
 ): Promise<void> {
   return append({ ts: new Date().toISOString(), kind: 'mcp', ...entry });
+}
+
+/// Record a failed tool execution observed via the SDK
+/// `onPostToolUseFailure` hook. Fire-and-forget like the other
+/// recorders; returns a promise so tests can await the side-effect.
+export function recordToolFailure(
+  entry: Omit<ToolFailureAuditEntry, 'ts' | 'kind'>,
+): Promise<void> {
+  return append({ ts: new Date().toISOString(), kind: 'toolFailure', ...entry });
 }
 
 /// Derive the forensic-safe `argKeys` / `argKeyCount` for an mcp

@@ -94,3 +94,16 @@ export type ReasoningEffort = NonNullable<SessionConfig['reasoningEffort']>;
 export type PreMcpToolCallInput = Parameters<
   NonNullable<NonNullable<SessionConfig['hooks']>['onPreMcpToolCall']>
 >[0];
+
+/// `PostToolUseFailureHookInput` (added in beta.9) is not exported from
+/// the SDK index — derive it from `SessionConfig['hooks']`. Like every
+/// tool/session-lifecycle hook it lives on the SDK's `SessionHooks`
+/// surface (under `config.hooks`), NOT at the top level. The host CLI
+/// fires it after a tool execution whose `resultType` is `"failure"`
+/// (NOT for `rejected`/`denied`/`timeout`), passing only the
+/// stringified `error` message — not the full `ToolResultObject`.
+/// See `node_modules/@github/copilot-sdk/dist/types.d.ts:887`
+/// (`PostToolUseFailureHookInput`) and `:1031` (`onPostToolUseFailure`).
+export type PostToolUseFailureInput = Parameters<
+  NonNullable<NonNullable<SessionConfig['hooks']>['onPostToolUseFailure']>
+>[0];

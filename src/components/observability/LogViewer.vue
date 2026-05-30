@@ -151,6 +151,10 @@ function auditLabel(entry: AuditEntry): string {
     return `${entry.serverName} · ${entry.toolName}${keys}`;
   }
 
+  if (entry.kind === 'toolFailure') {
+    return `${entry.toolName} failed · ${entry.error}`;
+  }
+
   return `${entry.allowed ? 'opened' : 'blocked'} · ${entry.url}`;
 }
 
@@ -165,6 +169,8 @@ function auditRowClass(entry: AuditEntry): string {
       return `audit-command-${entry.status}`;
     case 'mcp':
       return 'audit-mcp';
+    case 'toolFailure':
+      return 'audit-tool-failure';
     default:
       return entry.allowed ? 'audit-url-ok' : 'audit-url-blocked';
   }
@@ -523,6 +529,9 @@ function formatFields(fields: Record<string, unknown>): string {
 }
 .logviewer-row-record.audit-mcp {
   background: color-mix(in srgb, var(--p-primary-color) 5%, transparent);
+}
+.logviewer-row-record.audit-tool-failure {
+  background: color-mix(in srgb, var(--p-red-500, #ef4444) 8%, transparent);
 }
 
 .logviewer-row-tabs {

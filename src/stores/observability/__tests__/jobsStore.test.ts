@@ -15,10 +15,18 @@ function makeBridge(
   handlers: Partial<{
     [K in CommandName]: (args: CommandMap[K]['args']) => Promise<CommandMap[K]['result']>;
   }> = {},
-): { bridge: RpcBridge; calls: Array<{ name: string; args: unknown }> } {
+): {
+  bridge: RpcBridge;
+  calls: Array<{ name: string; args: unknown }>;
+  emitAudit: (entry: import('@/ipc/types').AuditEntry) => void;
+} {
   const calls: Array<{ name: string; args: unknown }> = [];
+  const auditListeners = new Set<(entry: import('@/ipc/types').AuditEntry) => void>();
   return {
     calls,
+    emitAudit: (entry) => {
+      for (const l of auditListeners) l(entry);
+    },
     bridge: {
       request: (async <N extends CommandName>(name: N, args: CommandMap[N]['args']) => {
         calls.push({ name, args });
@@ -33,7 +41,10 @@ function makeBridge(
       onSessionEvent: () => () => {},
       onPendingRequest: () => () => {},
       onLogEvent: () => () => {},
-      onAuditEvent: () => () => {},
+      onAuditEvent: (listener) => {
+        auditListeners.add(listener);
+        return () => auditListeners.delete(listener);
+      },
     },
   };
 }
@@ -146,6 +157,60 @@ describe('jobsStore', () => {
     await nextTick();
 
     expect(store.jobs[0]?.status).toBe('completed');
+  });
+
+  test('toolFailure audit entry surfaces SDK error context on the active autopilot job', async () => {
+    const { bridge, emitAudit } = makeBridge({
+      listJobs: async () => [],
+      setSessionMode: async () => 'autopilot',
+      sendMessage: async () => 'msg-1',
+    });
+    setRpcBridge(bridge);
+    const sessions = useSessionsStore();
+    sessions.sessions.push(sessionRecord('s1'));
+    const store = useJobsStore();
+
+    await store.startAutopilot('s1', 'Do the work');
+
+    emitAudit({
+      ts: new Date().toISOString(),
+      kind: 'toolFailure',
+      sessionId: 's1',
+      toolName: 'str_replace_editor',
+      error: 'old_str not found',
+      argKeys: ['command', 'path'],
+      argKeyCount: 2,
+    });
+    await nextTick();
+
+    expect(store.jobs[0]?.latestResponse).toContain('str_replace_editor');
+    expect(store.jobs[0]?.latestResponse).toContain('old_str not found');
+  });
+
+  test('toolFailure for another session does not touch unrelated jobs', async () => {
+    const { bridge, emitAudit } = makeBridge({
+      listJobs: async () => [],
+      setSessionMode: async () => 'autopilot',
+      sendMessage: async () => 'msg-1',
+    });
+    setRpcBridge(bridge);
+    const sessions = useSessionsStore();
+    sessions.sessions.push(sessionRecord('s1'));
+    const store = useJobsStore();
+
+    await store.startAutopilot('s1', 'Do the work');
+    const before = store.jobs[0]?.latestResponse;
+
+    emitAudit({
+      ts: new Date().toISOString(),
+      kind: 'toolFailure',
+      sessionId: 'other-session',
+      toolName: 'fetch',
+      error: 'timeout',
+    });
+    await nextTick();
+
+    expect(store.jobs[0]?.latestResponse).toBe(before);
   });
 
   test('openOwningSession parks a reveal intent for the spawning tool call', async () => {

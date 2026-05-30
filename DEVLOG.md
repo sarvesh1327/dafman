@@ -10,7 +10,46 @@
 
 ---
 
-## 2026-05-30 — Merge train (7 fix PRs + #94) + dogfood reconciliation + #88 re-spec
+## 2026-05-31 — #36 wire `postToolUseFailure` hook into Activity log + Jobs panel
+
+**Takeaway.** Adopted the SDK beta.9 `onPostToolUseFailure` hook to observe
+failed tool executions as a structured callback (previously only visible via
+parsed stream/error events). One new audit kind (`toolFailure`) carries the
+SDK's `error` string through the existing `subscribeAudit → auditEvent`
+pipeline; the LogViewer Activity view renders it and the Jobs panel enriches the
+active Autopilot job's latest-response with the SDK error context. No new IPC
+event type — reused the `AuditEntry` union (kept `src-bun/rpc.ts` ↔
+`src/ipc/types.ts` in sync + wire snapshot).
+
+**SDK surface (rule 23 — adoption, cite the source).**
+- `node_modules/@github/copilot-sdk/dist/types.d.ts:887` `PostToolUseFailureHookInput`
+  `{ toolName, toolArgs, error }` — the host CLI forwards only the stringified
+  `error`, NOT the full `ToolResultObject`.
+- `:904` `PostToolUseFailureHookOutput` — only `additionalContext` is honored
+  (we return `undefined`: observe-only, no model-guidance injection).
+- `:917` `PostToolUseFailureHandler`, `:1031` `onPostToolUseFailure?` on
+  `SessionHooks`. Fires ONLY for `resultType === "failure"` — NOT
+  `rejected`/`denied`/`timeout`.
+- **Gotcha reconfirmed:** the hook lives under `config.hooks` (`SessionHooks`),
+  not top-level — placed it alongside the existing `onPreMcpToolCall`.
+
+**Ownership / wire model.**
+- Live resource: a callback (no subscription) — no backend unsubscribe needed.
+  The renderer-side `jobsStore` subscription via `onAuditEvent` DOES return an
+  unsubscribe (stored + exposed as `dispose()`).
+- Wire shape: `AuditEntry` gains `{ ts, kind: 'toolFailure', sessionId,
+  toolName, error, argKeys?, argKeyCount? }`; persisted to
+  `audit/toolFailures.jsonl`.
+- `jobsStore` enriches only active `autopilot-session` jobs for the matching
+  `sessionId` (sdk-task jobs are read-only via `listJobs`). The completion
+  watcher later overwrites `latestResponse` with "Turn complete" — the failure
+  is transient on the live job but persistent in the Activity log.
+
+**Gates (port-free).** `bun run lint`, `lint:eslint`, `lint:tsc-bun`,
+`bun test` (743 pass), `bunx vite build` — all green. smoke/e2e/electrobun
+deferred to CI per the sibling-agent port constraint.
+
+
 
 **Takeaway.** Landed the reviewed dogfood-fix backlog as a sequential merge
 train — #84, #89, #90, #91, #92, #95, #97, then #94 — each rebased onto a

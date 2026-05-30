@@ -21,13 +21,14 @@ import type {
   ExitPlanModeResult,
   PermissionRequest,
   PermissionRequestResult,
+  PostToolUseFailureInput,
   PreMcpToolCallInput,
   Tool,
   UserInputRequest,
   UserInputResponse,
 } from '../client/copilotSdk';
 import { log } from '../observability/logging';
-import { recordMcpToolCall, extractArgKeys } from '../observability/audit';
+import { recordMcpToolCall, recordToolFailure, extractArgKeys } from '../observability/audit';
 import { toErrorMessage } from '../shared/errorMessage';
 import { summarizePermission, toPlainObject } from './sessionHelpers';
 import type {
@@ -256,6 +257,49 @@ export function buildBaseSessionConfig(deps: SessionConfigBuilderDeps, sessionId
           });
         } catch (err) {
           log.warn('mcp audit hook failed', { sessionId: sid, error: toErrorMessage(err) });
+        }
+
+        return undefined;
+      },
+      // #36: observe-only post-tool-use-failure hook (SDK beta.9).
+      // Fires after a tool execution whose result was "failure" (NOT
+      // rejected/denied/timeout — see the SDK note). `onPostToolUse`
+      // only fires for successful results, so without this hook failed
+      // tool calls are invisible to us as a structured callback. We
+      // record a forensic audit entry carrying the SDK-provided `error`
+      // message (the activity-log + jobs-panel source for #36) and
+      // return undefined — we do NOT inject `additionalContext` (the
+      // only field the host CLI honors for failure hooks), keeping this
+      // observe-only. Defensive: never throws — an audit failure must
+      // not break the tool critical path.
+      //
+      // SDK shape: node_modules/@github/copilot-sdk/dist/types.d.ts:887
+      // (PostToolUseFailureHookInput { toolName, toolArgs, error }),
+      // :1031 (onPostToolUseFailure on SessionHooks).
+      onPostToolUseFailure: (input: PostToolUseFailureInput): undefined => {
+        const sid = sessionId();
+
+        try {
+          const { argKeys, argKeyCount } = extractArgKeys(input.toolArgs);
+
+          log.info('tool failure', {
+            sessionId: sid,
+            toolName: input.toolName,
+            error: input.error,
+          });
+
+          void recordToolFailure({
+            sessionId: sid,
+            toolName: input.toolName,
+            error: input.error,
+            argKeys,
+            argKeyCount,
+          });
+        } catch (err) {
+          log.warn('tool failure hook failed', {
+            sessionId: sid,
+            error: toErrorMessage(err),
+          });
         }
 
         return undefined;

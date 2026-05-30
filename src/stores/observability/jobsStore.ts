@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
-import { invokeCommand } from '@/ipc/invoke';
+import { invokeCommand, onAuditEvent } from '@/ipc/invoke';
 import type { JobRecord } from '@/ipc/types';
 import { useLayoutStore } from '@/stores/shell/layoutStore';
 import { useSessionsStore } from '@/stores/chat/sessionsStore';
@@ -204,6 +204,37 @@ export const useJobsStore = defineStore('jobs', () => {
     localJobs.value = localJobs.value.map((job) => (job.id === id ? { ...job, ...patch } : job));
   }
 
+  /// #36: surface SDK-observed tool failures on the jobs panel.
+  /// The backend `onPostToolUseFailure` hook records a `toolFailure`
+  /// audit entry carrying the SDK-provided `error` string; we listen on
+  /// the same audit pipeline the Activity view uses and attach that
+  /// structured error context to the matching active autopilot job so
+  /// the panel renders the actual failure (not just our parsed stream
+  /// event). The subscription returns an unsubscribe stored on the
+  /// store for lifecycle cleanup (rule: no background sub without
+  /// teardown).
+  const auditUnsubscribe = onAuditEvent((entry) => {
+    if (entry.kind !== 'toolFailure') return;
+
+    for (const job of localJobs.value) {
+      if (
+        job.source !== 'autopilot-session' ||
+        job.sessionId !== entry.sessionId ||
+        !isActiveStatus(job.status)
+      ) {
+        continue;
+      }
+
+      updateLocalJob(job.id, {
+        latestResponse: `⚠ ${entry.toolName} failed: ${entry.error}`,
+      });
+    }
+  });
+
+  function dispose(): void {
+    auditUnsubscribe();
+  }
+
   function taskIdFromJob(job: JobRecord): string {
     return job.id.startsWith(`${job.sessionId}:`) ? job.id.slice(job.sessionId.length + 1) : job.id;
   }
@@ -282,5 +313,6 @@ export const useJobsStore = defineStore('jobs', () => {
     promoteJob,
     openOwningSession,
     startAutopilot,
+    dispose,
   };
 });

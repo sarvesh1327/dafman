@@ -693,7 +693,7 @@ describe('IPC wire contracts — diagnostics', () => {
     expect(sample).toMatchSnapshot();
   });
 
-  test('AuditEntry permission + url + mcp shapes', () => {
+  test('AuditEntry permission + url + mcp + toolFailure shapes', () => {
     const samples: import('../rpc').AuditEntry[] = [
       {
         ts: '2026-05-22T00:00:00.000Z',
@@ -728,6 +728,15 @@ describe('IPC wire contracts — diagnostics', () => {
         toolName: 'create_issue',
         toolCallId: 'tc-1',
         argKeys: ['title', 'body'],
+        argKeyCount: 2,
+      },
+      {
+        ts: '2026-05-22T00:00:04.000Z',
+        kind: 'toolFailure',
+        sessionId: 'sess-1',
+        toolName: 'str_replace_editor',
+        error: 'No replacement performed: old_str not found',
+        argKeys: ['command', 'path'],
         argKeyCount: 2,
       },
     ];

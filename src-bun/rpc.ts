@@ -1225,8 +1225,10 @@ export type DafmanRPC = {
       /// renderer applies its own client-side filter).
       logEvent: LogRecord;
       /// Live audit-log entry. Fanned out by `subscribeAudit()`
-      /// for every recordPermission / recordUrl call. The
-      /// in-app Activity view (Diagnostics panel) subscribes.
+      /// for every recordPermission / recordUrl / recordMcpToolCall /
+      /// recordToolFailure call. The in-app Activity view (Diagnostics
+      /// panel) subscribes; the jobs store also listens for
+      /// `toolFailure` entries to surface SDK error context (#36).
       auditEvent: AuditEntry;
       terminalEvent: TerminalEventPayload;
       commandResultEvent: CommandResultEvent;
@@ -1281,6 +1283,15 @@ export type AuditEntry =
       serverName: string;
       toolName: string;
       toolCallId?: string;
+      argKeys?: string[];
+      argKeyCount?: number;
+    }
+  | {
+      ts: string;
+      kind: 'toolFailure';
+      sessionId: string;
+      toolName: string;
+      error: string;
       argKeys?: string[];
       argKeyCount?: number;
     };
